@@ -76,6 +76,9 @@ public class WEEUpD implements Runnable {
 		nPort = 4321;
 		sHostName = "localhost";
 		this.createSocket();
+		File passwd = new File("passwd");
+		if(!f.exists())
+			new FileOutputStream(file).close();
 	}
 
 	WEEUpD(int p) {
@@ -83,6 +86,9 @@ public class WEEUpD implements Runnable {
 		nPort = p;
 		sHostName = "localhost";
 		this.createSocket();
+		File passwd = new File("passwd");
+		if(!f.exists())
+			new FileOutputStream(file).close();
 	}
 
 	public void createSocket() {
@@ -194,7 +200,7 @@ public class WEEUpD implements Runnable {
 			success = login();
 			break;
 		case MAIN:
-			success = main();
+			success = mainMenu();
 			break;
 		case PROFILE:
 			success = profile();
@@ -387,6 +393,19 @@ public class WEEUpD implements Runnable {
 	private boolean initEncryption() {
 		log("initEncryption() START");
 		try {
+		} catch(Exception e) {
+			log("Error During Encryption Initialization!");
+			resetClient();
+			return false;
+		}
+		log("initEncryption() DONE");
+		return true;
+	}
+
+	//NOTE: This function was created as part of the original specifications and should not be used
+	private boolean manualKeyValGen() {
+		log("manualKeyValGen() START");
+		try {
 			//Generate initial Diffie-Hellman Values
 			KeyPairGenerator kpGen = KeyPairGenerator.getInstance("DiffieHellman");
 			kpGen.initialize(nKeyLength);
@@ -444,23 +463,25 @@ public class WEEUpD implements Runnable {
 			send("[RECEIVED]");
 			nKey = nKey.modPow(nKx, nDHp);
 			log("Generated Key: " + nKey.toString());
+			
 		} catch(Exception e) {
 			log("Error during encryption initialization...");
 			resetClient();
 			return false;
 		}
-		log("initEncryption() DONE");
-		return true;
+		log("manKeyValGen() DONE");
+		//return true;
+		return false; //Function always returns false as it should not be used
 	}
 
-	private boolean main() {
-		log("main() START");
+	private boolean mainMenu() {
+		log("mainMenu() START");
 		String input = receive();
 		if(input == null)
 			return false;
 		input = input.trim().toLowerCase();
 		System.out.println("(CLIENT): " + input);
-		log("main() DONE");
+		log("mainMenu() DONE");
 		return true;
 	}
 
