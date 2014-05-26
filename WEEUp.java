@@ -279,6 +279,17 @@ public class WEEUp {
 	private boolean initEncryption() {
 		log("initEncryption() START");
 		try {
+		} catch(Exception e) {
+			errorOut(e.toString(), e);
+		}
+		log("initEncryption() DONE");
+		return true;
+	}
+
+	//NOTE: This function was created as part of original specifications & should not be used
+	private boolean manKeyValGen() {
+		log("manKeyValGen() START");
+		try {
 			/*KeyPairGenerator kpGen = KeyPairGenerator.getInstance("DiffieHellman");
 			kpGen.initialize(1024);
 			log("Initialized Key Pair Generator");
@@ -322,8 +333,9 @@ public class WEEUp {
 		} catch(Exception e) {
 			errorOut("Enctyption Initialization Error", e);
 		}
-		log("initEncryption() DONE");
-		return true;
+		log("manKeyValGen() DONE");
+		//return true;
+		return false; //Always return false because it should not be used
 	}
 
 	public static String md5(String str) {
@@ -379,7 +391,7 @@ public class WEEUp {
 			errorOut("ERROR: " + e, e);
 		} //END try/catch
 		log("mainMenu() DONE");
-	} //END main()
+	} //END mainMenu()
 
 	private void profile() {
 		log("profile() START");
