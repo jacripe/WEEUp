@@ -1,21 +1,24 @@
-/** HEADER
+/* HEADER
  */
 
-/****************************************************************
+/* ***************************************************************
  * 			INCLUDES
- ****************************************************************/
+ * ***************************************************************/
 import java.io.*;
 import java.net.*;
 import java.util.*;
 import java.math.*;
+
 import java.security.*;
+import java.security.spec.*;
 
 import javax.crypto.*;
 import javax.crypto.spec.*;
+import javax.crypto.interfaces.*;
 
-/****************************************************************
+/* ***************************************************************
  * 			CLASS DEFINITION
- ****************************************************************/
+ * ***************************************************************/
 
 public class WEEUp {
 //***************************************************************
@@ -45,7 +48,10 @@ public class WEEUp {
 	//From Client
 	private static BigInteger	nKx;	//Private X
 	private static BigInteger	nKy;	//Private Y
-	private static BigInteger	nKey;	//Private Key
+	private static BigInteger	nKey;	//Private Key Value
+
+	private static DHPrivateKey	mKey;	//Private Key Object
+	private static DHPublicKey	mServerKey;	//Public Server Key
 
 	//TODO Make Configurable
 	private static final int	nKeyLen = 1024;	//Key Length
@@ -279,6 +285,69 @@ public class WEEUp {
 	private boolean initEncryption() {
 		log("initEncryption() START");
 		try {
+			//Prep an exception to throw if needed
+			Exception keyException = new Exception("Invalid Key Data");
+			log("Waiting on Key Data From Server...");
+
+			//FORMAT:
+			//[PUBKEY]
+			//Key Bytes...
+			//[END]
+			receive();
+			if(!sStringBuffer.contains("[PUBKEY]"))
+				throw keyException;
+			log("Received Server Response:\n" + sStringBuffer);
+
+			//Parse Out the Encoded Public Key
+			byte[] serverPubKeyBytes = sStringBuffer.split("\n")[1].getBytes();
+			log("Parsed Server Public Key Bytes:\n" + serverPubKeyBytes);
+
+			//Instantiate DH Public Key From Bytes
+			KeyFactory kFac = KeyFactory.getInstance("DiffieHellman");
+			log("Initialized Key Factory");
+			X509EncodedKeySpec encKSpec =
+				new X509EncodedKeySpec(serverPubKeyBytes);
+			DHPublicKey mServerKey = (DHPublicKey) kFac.generatePublic(encKSpec);
+			log("Instantiated Server Public Key");
+
+			//Initialize Key Specifications
+			DHParameterSpec kParmSpec = mServerKey.getParams();
+
+			//Generate Client Keys
+			KeyPairGenerator kPGen = KeyPairGenerator.getInstance("DiffieHellman");
+			kPGen.initialize(kParmSpec);
+			KeyPair keyPair = kPGen.generateKeyPair();
+			log("Generated Client DH Public/Private Key Pair");
+
+			//Initialize Key Agreement
+			KeyAgreement kAgree = KeyAgreement.getInstance("DiffieHellman");
+			kAgree.init(keyPair.getPrivate());
+			log("Initialized Client Key Agreement");
+
+			//Encode Public Key For Transport
+			byte[] pubKeyBytes = keyPair.getPublic().getEncoded();
+			log("Encoded Public Key:\n" + pubKeyBytes);
+
+			//Send Client Public Key to Server
+			//FORMAT:
+			//[PUBKEY]
+			//Encoded Key Data...
+			//[RECEIVED]
+			//[END]
+			send("[PUBKEY]\n" + pubKeyBytes + "\n[SUCCESS]");
+			log("Send Encoded Public Key to Server");
+
+			log("Waiting on Server Response");
+			receive();
+			if(!sStringBuffer.contains("[SUCCESS]"))
+				throw keyException;
+			log("Received Server Response:\n" + sStringBuffer);
+
+			//Agree Those Keys
+			kAgree.doPhase(mServerKey, true);
+			log("Client Key Agreement Complete");
+
+			//TODO GENERATE SHARED KEY
 		} catch(Exception e) {
 			errorOut(e.toString(), e);
 		}

@@ -1,21 +1,24 @@
 /** HEADER
  */
 
-/****************************************************************
+/* ***************************************************************
  * 			INCLUDES
- ***************************************************************/
+ * **************************************************************/
 import java.io.*;
 import java.net.*;
 import java.math.*;
 import java.util.*;
+
 import java.security.*;
+import java.security.spec.*;
 
 import javax.crypto.*;
 import javax.crypto.spec.*;
+import javax.crypto.interfaces.*;
 
-/****************************************************************
+/* ***************************************************************
  * 			CLASS DEFINITION
- ***************************************************************/
+ * **************************************************************/
 
 public class WEEUpD implements Runnable {
 //***************************************************************
@@ -41,16 +44,19 @@ public class WEEUpD implements Runnable {
 
 	//Whether encryption has been initialized
 	private boolean			bEncrypt = false; 
-	//private static final BigInteger p = new BigInteger(1024, 32, new SecureRandom());
-	//private static final BigInteger g = new BigInteger("3");
+	
 	//Diffie-Hellman Values
 	private static BigInteger 	nDHp;	//Modulus P
 	private static BigInteger	nDHg;	//Genertor G
 	private static BigInteger	nKx;	//Private X value
 	private static BigInteger	nKy;	//Private Y value
-	private static BigInteger	nKey;	//Private Key
+	private static BigInteger	nKey;	//Private Key Value
+
+	private static DHPrivateKey	mKey;	//Server Private Key Object
+	private static DHPublicKey	mClientKey;	//Client Public Key Object
+
 	//TODO Make configurable
-	private static final int	nKeyLength = 1024; //Length of Key
+	private static final int	nKeyLen = 1024; //Length of Key
 	private static final int	nPrimeCert = 0; //Certainty of Number Being Prime 
 
 	private static SecureRandom	mSecRan = new SecureRandom();
@@ -76,9 +82,15 @@ public class WEEUpD implements Runnable {
 		nPort = 4321;
 		sHostName = "localhost";
 		this.createSocket();
-		File passwd = new File("passwd");
-		if(!f.exists())
-			new FileOutputStream(file).close();
+		try {
+			File f = new File("passwd");
+			if(!f.exists())
+				new FileOutputStream(f).close();
+		} catch(Exception e) {
+			log("ERROR! PASSWD DOES NOT EXIST & CANNOT BE CREATED!");
+			e.printStackTrace();
+			System.exit(-1);
+		}
 	}
 
 	WEEUpD(int p) {
@@ -86,9 +98,15 @@ public class WEEUpD implements Runnable {
 		nPort = p;
 		sHostName = "localhost";
 		this.createSocket();
-		File passwd = new File("passwd");
-		if(!f.exists())
-			new FileOutputStream(file).close();
+		try {
+			File f = new File("passwd");
+			if(!f.exists())
+				new FileOutputStream(f).close();
+		} catch(Exception e) {
+			log("ERROR! PASSWD DOES NOT EXIST & CANNOT BE CREATED!");
+			e.printStackTrace();
+			System.exit(-1);
+		}
 	}
 
 	public void createSocket() {
@@ -393,8 +411,73 @@ public class WEEUpD implements Runnable {
 	private boolean initEncryption() {
 		log("initEncryption() START");
 		try {
+			Exception keyException = new Exception("Error Initializing Encryption");
+			/* GENERATE PARAMETERS
+ 			AlgorithmParameterGenerator aPGen =
+				AlgorithmParameterGenerator.getInstance("DiffieHellman");
+			aPGen.init(1024);
+			AlgorithmParameters algParms = aPGen.generateParameters();
+			DHParameterSpec dhParmSpec = (DHParameterSpec)
+							algParms.getParamterSpec(DHParameterSpec.class);
+			*/
+			// USE SKIP DH PARAMETERS
+			log("Using SKIP Diffie-Hellman Parameters");
+			DHParameterSpec dhParmSpec = new DHParameterSpec(skip1024Modulus, skip1024Base);
+
+			//Create Server Key Pair
+			KeyPairGenerator kPGen = KeyPairGenerator.getInstance("DiffieHellman");
+			kPGen.initialize(dhParmSpec);
+			KeyPair keyPair = kPGen.generateKeyPair();
+			log("Generated Server Key Pair");
+
+			//Create & Initialize Server Key Agreement
+			KeyAgreement kAgree = KeyAgreement.getInstance("DiffieHellman");
+			kAgree.init(keyPair.getPrivate());
+			log("Initialized Server Key Agreement");
+
+			//Encode Server Public Key for Transport
+			byte[] pubKeyEnc = keyPair.getPublic().getEncoded();
+			log("Encoded Server Public Key");
+
+			//Send Encoded Public Key to Client
+			send("[PUBKEY]\n" + pubKeyEnc);
+			log("Send Public Key to Client");
+
+			//Get Client Public Key
+			//FORMAT:
+			//[PUBKEY]
+			//Encoded Key Data...
+			//[RECEIVED]
+			//[END]
+			log("Waiting on Client Response");
+			receive();
+			if(!sStringBuffer.contains("[RECEIVED]")
+			|| !sStringBuffer.contains("[PUBKEY]"))
+				throw keyException;
+			log("Received Client Response:\n" + sStringBuffer);
+
+			//Parse Client Public Key
+			byte[] clientPubKeyBytes = sStringBuffer.split("\n")[1].getBytes();
+			log("Parsed Encoded Client Public Key:\n" + clientPubKeyBytes);
+
+			//Instantiate Client Public Key
+			KeyFactory kFac = KeyFactory.getInstance("DiffieHellman");
+			X509EncodedKeySpec encKeySpec = new X509EncodedKeySpec(clientPubKeyBytes);
+			mClientKey = (DHPublicKey) kFac.generatePublic(encKeySpec);
+			log("Instantiated Client Public Key");
+
+			//Agree Those Keys
+			kAgree.doPhase(mClientKey, true);
+			log("Server Key Agreement Complete");
+
+			//Notify Client
+			send("[SUCCESS]");
+			log("Notified Client");
+
+			//TODO Generate Shared Key
 		} catch(Exception e) {
 			log("Error During Encryption Initialization!");
+			e.printStackTrace();
 			resetClient();
 			return false;
 		}
@@ -408,7 +491,7 @@ public class WEEUpD implements Runnable {
 		try {
 			//Generate initial Diffie-Hellman Values
 			KeyPairGenerator kpGen = KeyPairGenerator.getInstance("DiffieHellman");
-			kpGen.initialize(nKeyLength);
+			kpGen.initialize(nKeyLen);
 			log("Initialized Key Pair Generator with Diffie-Hellman");
 			KeyPair pair = kpGen.generateKeyPair();
 			log("Generated Key Pair");
@@ -439,7 +522,7 @@ public class WEEUpD implements Runnable {
 
 			log("Generating Private Key Values");
 			//Select Random Key X/Y Values
-			nKx = new BigInteger(nKeyLength-1, nPrimeCert, mSecRan);
+			nKx = new BigInteger(nKeyLen-1, nPrimeCert, mSecRan);
 			log("KeyX: " + nKx.toString());
 			nKy = nDHg.modPow(nKx, nDHp);
 			log("KeyY: " + nKy.toString());
@@ -672,4 +755,48 @@ public class WEEUpD implements Runnable {
 		e.printStackTrace();
 		System.exit(-1);
 	}
+
+
+//**************************************************************
+// 			SKIP PROTOCOL
+// SEE: http://docs.oracle.com/javase/7/docs/technotes/guides/security/crypto/CryptoSpec.html#AppD
+	private static final byte skip1024ModulusBytes[] = {
+	        (byte)0xF4, (byte)0x88, (byte)0xFD, (byte)0x58,
+	        (byte)0x4E, (byte)0x49, (byte)0xDB, (byte)0xCD,
+	        (byte)0x20, (byte)0xB4, (byte)0x9D, (byte)0xE4,
+	        (byte)0x91, (byte)0x07, (byte)0x36, (byte)0x6B,
+	        (byte)0x33, (byte)0x6C, (byte)0x38, (byte)0x0D,
+	        (byte)0x45, (byte)0x1D, (byte)0x0F, (byte)0x7C,
+	        (byte)0x88, (byte)0xB3, (byte)0x1C, (byte)0x7C,
+	        (byte)0x5B, (byte)0x2D, (byte)0x8E, (byte)0xF6,
+	        (byte)0xF3, (byte)0xC9, (byte)0x23, (byte)0xC0,
+	        (byte)0x43, (byte)0xF0, (byte)0xA5, (byte)0x5B,
+	        (byte)0x18, (byte)0x8D, (byte)0x8E, (byte)0xBB,
+	        (byte)0x55, (byte)0x8C, (byte)0xB8, (byte)0x5D,
+	        (byte)0x38, (byte)0xD3, (byte)0x34, (byte)0xFD,
+	        (byte)0x7C, (byte)0x17, (byte)0x57, (byte)0x43,
+	        (byte)0xA3, (byte)0x1D, (byte)0x18, (byte)0x6C,
+	        (byte)0xDE, (byte)0x33, (byte)0x21, (byte)0x2C,
+	        (byte)0xB5, (byte)0x2A, (byte)0xFF, (byte)0x3C,
+	        (byte)0xE1, (byte)0xB1, (byte)0x29, (byte)0x40,
+	        (byte)0x18, (byte)0x11, (byte)0x8D, (byte)0x7C,
+	        (byte)0x84, (byte)0xA7, (byte)0x0A, (byte)0x72,
+	        (byte)0xD6, (byte)0x86, (byte)0xC4, (byte)0x03,
+	        (byte)0x19, (byte)0xC8, (byte)0x07, (byte)0x29,
+	        (byte)0x7A, (byte)0xCA, (byte)0x95, (byte)0x0C,
+	        (byte)0xD9, (byte)0x96, (byte)0x9F, (byte)0xAB,
+	        (byte)0xD0, (byte)0x0A, (byte)0x50, (byte)0x9B,
+	        (byte)0x02, (byte)0x46, (byte)0xD3, (byte)0x08,
+	        (byte)0x3D, (byte)0x66, (byte)0xA4, (byte)0x5D,
+	        (byte)0x41, (byte)0x9F, (byte)0x9C, (byte)0x7C,
+	        (byte)0xBD, (byte)0x89, (byte)0x4B, (byte)0x22,
+	        (byte)0x19, (byte)0x26, (byte)0xBA, (byte)0xAB,
+	        (byte)0xA2, (byte)0x5E, (byte)0xC3, (byte)0x55,
+	        (byte)0xE9, (byte)0x2F, (byte)0x78, (byte)0xC7
+	};
+
+	private static final BigInteger		skip1024Modulus = 
+		new BigInteger(1, skip1024ModulusBytes);
+	private static final BigInteger		skip1024Base =
+		BigInteger.valueOf(2);
 }
