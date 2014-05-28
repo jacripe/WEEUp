@@ -6,8 +6,8 @@
  * ***************************************************************/
 import java.io.*;
 import java.net.*;
-import java.util.*;
 import java.math.*;
+import java.util.*;
 
 import java.security.*;
 import java.security.spec.*;
@@ -46,15 +46,16 @@ public class WEEUp {
 	private boolean			bEncrypt = false;
 	//Diffie-Hellman Values
 	//From Server
-	private static BigInteger	nDHp;	//Modulus P
-	private static BigInteger	nDHg;	//Generator G
+	//private static BigInteger	nDHp;	//Modulus P
+	//private static BigInteger	nDHg;	//Generator G
 	//From Client
-	private static BigInteger	nKx;	//Private X
-	private static BigInteger	nKy;	//Private Y
-	private static BigInteger	nKey;	//Private Key Value
+	//private static BigInteger	nKx;	//Private X
+	//private static BigInteger	nKy;	//Private Y
+	//private static BigInteger	nKey;	//Private Key Value
 
-	private static DHPrivateKey	mKey;	//Private Key Object
-	private static DHPublicKey	mServerKey;	//Public Server Key
+	private static DHPrivateKey	mDHPrivKey;	//Private Key Object
+	private static DHPublicKey	mServerPubKey;	//Public Server Key
+	private static byte[]		aKeyBytes;	//Shared Secret Key Byte Array
 
 	//TODO Make Configurable
 	private static final int	nKeyLen = 1024;	//Key Length
@@ -331,21 +332,27 @@ public class WEEUp {
 
 			//Encode Public Key For Transport
 			byte[] pubKeyBytes = keyPair.getPublic().getEncoded();
-			log("Encoded Public Key:\n" + pubKeyBytes);
+			log("Encoded Public Key:\n" + toHexString(pubKeyBytes));
 
 			//Send Client Public Key to Server
 			//FORMAT:
 			//[PUBKEY]
-			//Public Key Length.
+			//Public Key Length
 			//[RECEIVED]
 			//[END]
 			send("[PUBKEY]\n" + pubKeyBytes.length + "\n[RECEIVED]");
 			sendBytes(pubKeyBytes);
 			log("Sent Encoded Public Key to Server");
 
+			//Get Confirmation & Secret Key Length From Server
+			//FORMAT:
+			//[PRIVKEY]
+			//Secret Key Length
+			//[RECEIVED]
+			//[END]
 			log("Waiting on Server Response");
 			receive();
-			if(!sStringBuffer.contains("[SUCCESS]"))
+			if(!sStringBuffer.contains("[RECEIVED]"))
 				throw new Exception("Error Sending Public Key to Server");
 			log("Received Server Response:\n" + sStringBuffer);
 
@@ -353,19 +360,52 @@ public class WEEUp {
 			kAgree.doPhase(mServerKey, true);
 			log("Client Key Agreement Complete");
 
-			//TODO GENERATE SHARED KEY
+			if(!sStringBuffer.contains("[PRIVKEY]"))
+				throw new Exception("Error Receiving Secret Key Length From Server");
+			length = new Integer(sStringBuffer.split("\n")[1]).intValue();
+			
+			//TODO Remove this block...
+			aKeyBytes = new byte[length];
+			try {
+				length = kAgree.generateSecret(aKeyBytes, 1);
+			} catch(Exception e) {
+				log("This was intentional & should be removed");
+				e.printStackTrace();
+			}
+			//Generate Symmetric Client Secret Key (Should Match Server)
+			length = kAgree.generateSecret(aKeyBytes, 0);
+			log("Generated Client Secret Key:\n" + toHexString(aKeyBytes));
+
+			//Notify Server
+			send("[SUCCESS]");
 		} catch(Exception e) {
 			errorOut(e.toString(), e);
 		}
 		log("initEncryption() DONE");
 		return true;
-	}
+	} //END initEncryption
+
+	private String toHexString(byte[] b) {
+		log("toHexString() START");
+		StringBuffer sBuff = new StringBuffer();
+		int length = b.length;
+		char[] hexChars = { '0', '1', '2', '3', '4', '5', '6', '7',
+				    '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
+		for(int i = 0; i < length; i++) {
+			int high = ((b[i] & 0xf0) >> 4); 
+			int low = (b[i] & 0x0f);
+			sBuff.append(hexChars[high]);
+			sBuff.append(hexChars[low]);
+		} //END for 
+		log("toHexString() DONE");
+		return sBuff.toString();
+	} //END toHexString
 
 	//NOTE: This function was created as part of original specifications & should not be used
-	private boolean manKeyValGen() {
+	/*private boolean manKeyValGen() {
 		log("manKeyValGen() START");
 		try {
-			/*KeyPairGenerator kpGen = KeyPairGenerator.getInstance("DiffieHellman");
+			KeyPairGenerator kpGen = KeyPairGenerator.getInstance("DiffieHellman");
 			kpGen.initialize(1024);
 			log("Initialized Key Pair Generator");
 			KeyPair pair = kpGen.generateKeyPair();
@@ -373,7 +413,7 @@ public class WEEUp {
 			KeyFactory kFactory = KeyFactory.getInstance("DiffieHellman");
 			DHPublicKeySpec kSpec = (DHPublicKeySpec) kFactory.getKeySpec(
                         			pair.getPublic(), DHPublicKeySpec.class);
-			log("Initialized Key Factory & Obtained Spec");*/
+			log("Initialized Key Factory & Obtained Spec");
 			log("Waiting on Diffie-Hellman Values...");
 			receive();
 			log("Received Server P String: " + sStringBuffer);
@@ -411,7 +451,7 @@ public class WEEUp {
 		log("manKeyValGen() DONE");
 		//return true;
 		return false; //Always return false because it should not be used
-	}
+	}*/
 
 	public static String md5(String str) {
 		//log("md5() START");
@@ -522,7 +562,7 @@ public class WEEUp {
 			}
 			if((b = mRawInStream.available()) > 0)
 				throw new Exception("Too Many Bytes, " + b + " bytes remaining");
-			log("Received " + retVal.length + " Bytes:\n" + new String(retVal));
+			log("Received " + retVal.length + " Bytes:\n" + toHexString(retVal));
 		} catch(Exception e) {
 			errorOut(e.toString(), e);
 		}
@@ -559,7 +599,7 @@ public class WEEUp {
 				mRawOutStream = mSocket.getOutputStream();
 			log("Verified Output Stream");
 
-			log("Sending " + b.length + " bytes to server:\n" + new String(b));
+			log("Sending " + b.length + " bytes to server:\n" + toHexString(b));
 			mRawOutStream.write(b);
 			mRawOutStream.flush();
 			log("Flushed Output Stream");

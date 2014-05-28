@@ -52,14 +52,15 @@ public class WEEUpD implements Runnable {
 	private boolean			bEncrypt = false; 
 	
 	//Diffie-Hellman Values
-	private static BigInteger 	nDHp;	//Modulus P
-	private static BigInteger	nDHg;	//Genertor G
-	private static BigInteger	nKx;	//Private X value
-	private static BigInteger	nKy;	//Private Y value
-	private static BigInteger	nKey;	//Private Key Value
+	//private static BigInteger 	nDHp;	//Modulus P
+	//private static BigInteger	nDHg;	//Genertor G
+	//private static BigInteger	nKx;	//Private X value
+	//private static BigInteger	nKy;	//Private Y value
+	//private static BigInteger	nKey;	//Private Key Value
 
-	private static DHPrivateKey	mKey;	//Server Private Key Object
+	private static DHPrivateKey	mDHKey;		//DH Private Key Object
 	private static DHPublicKey	mClientKey;	//Client Public Key Object
+	private static byte[]		aKeyBytes;	//Shared Secret Key Byte Array
 
 	//TODO Make configurable
 	private static final int	nKeyLen = 1024; //Length of Key
@@ -447,7 +448,7 @@ public class WEEUpD implements Runnable {
 
 			//Encode Server Public Key for Transport
 			byte[] pubKeyEnc = keyPair.getPublic().getEncoded();
-			log("Encoded Server Public Key");
+			log("Encoded Server Public Key:\n" + toHexString(pubKeyEnc));
 
 			//Send Encoded Public Key to Client
 			send("[PUBKEY]\n" + pubKeyEnc.length);
@@ -457,7 +458,7 @@ public class WEEUpD implements Runnable {
 			//Get Client Public Key
 			//FORMAT:
 			//[PUBKEY]
-			//Encoded Key Data...
+			//Public Key Length
 			//[RECEIVED]
 			//[END]
 			log("Waiting on Client Response");
@@ -465,12 +466,12 @@ public class WEEUpD implements Runnable {
 			if(!sStringBuffer.contains("[RECEIVED]")
 			|| !sStringBuffer.contains("[PUBKEY]"))
 				throw new Exception("Error Sending Public Key Bytes to Client");
-			log("Received Client Response:\n" + sStringBuffer);
+			log("Received Client Response:\n" + sStringBuffer.split("\n")[2]);
 
 			//Parse Client Public Key
 			int length = new Integer(sStringBuffer.split("\n")[1]).intValue();
 			byte[] clientPubKeyBytes = receiveBytes(length);
-			log("Parsed Encoded Client Public Key:\n" + clientPubKeyBytes);
+			log("Parsed Encoded Client Public Key:\n" + toHexString(clientPubKeyBytes));
 
 			//Instantiate Client Public Key
 			KeyFactory kFac = KeyFactory.getInstance("DiffieHellman");
@@ -482,11 +483,22 @@ public class WEEUpD implements Runnable {
 			kAgree.doPhase(mClientKey, true);
 			log("Server Key Agreement Complete");
 
+			//Generate Shared SecretKey
+			aKeyBytes = kAgree.generateSecret();
 			//Notify Client
-			send("[SUCCESS]");
-			log("Notified Client");
+			//FORMAT:
+			//[PRIVKEY]
+			//Secret Key Length
+			//[RECEIVED]
+			//[END]
+			send("[PRIVKEY]\n" + aKeyBytes.length + "\n[RECEIVED]");
+			log("Sent Secret Key Length to Client");
 
-			//TODO Generate Shared Key
+			//Get Client Confirmation
+			receive();
+			if(!sStringBuffer.contains("[SUCCESS]"))
+				throw new Exception("Key Agreement Error");
+			log("Generated Server Secret Key:\n" + toHexString(aKeyBytes));
 		} catch(Exception e) {
 			log("Error During Encryption Initialization!");
 			e.printStackTrace();
@@ -497,8 +509,24 @@ public class WEEUpD implements Runnable {
 		return true;
 	}
 
+	private String toHexString(byte[] b) {
+		log("toHexString() START");
+		StringBuffer sBuff = new StringBuffer();
+		int length = b.length;
+		char[] hexChars = { '0', '1', '2', '3', '4', '5', '6', '7',
+				    '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
+		for(int i = 0; i < length; i++) {
+			int high = ((b[i] & 0xf0) >> 4);
+			int low = (b[i] & 0x0f);
+			sBuff.append(hexChars[high]);
+			sBuff.append(hexChars[low]);
+		}
+		log("toHexString() DONE");
+		return sBuff.toString();
+	}
+
 	//NOTE: This function was created as part of the original specifications and should not be used
-	private boolean manualKeyValGen() {
+	/*private boolean manualKeyValGen() {
 		log("manualKeyValGen() START");
 		try {
 			//Generate initial Diffie-Hellman Values
@@ -567,7 +595,7 @@ public class WEEUpD implements Runnable {
 		log("manKeyValGen() DONE");
 		//return true;
 		return false; //Function always returns false as it should not be used
-	}
+	}*/
 
 	private boolean mainMenu() {
 		log("mainMenu() START");
@@ -697,7 +725,7 @@ public class WEEUpD implements Runnable {
 			//	mByteOutStream = (ByteArrayOutputStream) mClientSocket.getOutputStream();
 			log("Verified Output Streams");
 
-			log("Sending " + b.length + " bytes to client:\n" + new String(b));
+			log("Sending " + b.length + " bytes to client:\n" + toHexString(b));
 			//for(int i = 0; i < b.length; i++)
 			//	mRawOutStream.write(b[i]);
 			mRawOutStream.write(b);
@@ -774,7 +802,7 @@ public class WEEUpD implements Runnable {
 			} //END For
 			if((b = mRawInStream.available()) > 0)
 				throw new Exception("Too many bytes, " + b + " bytes remaining");
-			log("Received " + retVal.length + " Bytes:\n" + new String(retVal));
+			log("Received " + retVal.length + " Bytes:\n" + toHexString(retVal));
 		} catch (Exception e) {
 			log("Error while receiving bytes from client");
 			e.printStackTrace();
