@@ -36,6 +36,9 @@ public class WEEUp {
 	private Socket		mSocket;
 	private BufferedReader	mInputStream;
 	private PrintWriter	mOutputStream;
+
+	private InputStream	mRawInStream;
+	private OutputStream	mRawOutStream;
 	
 	private Console		mConsole = System.console();
 
@@ -282,25 +285,27 @@ public class WEEUp {
 		log("login() DONE");
 	}
 	
+	//Adapted from Oracle documentation:
+	//http://docs.oracle.com/javase/7/docs/technotes/guides/security/crypto/CryptoSpec.html#AppD
 	private boolean initEncryption() {
 		log("initEncryption() START");
 		try {
-			//Prep an exception to throw if needed
-			Exception keyException = new Exception("Invalid Key Data");
 			log("Waiting on Key Data From Server...");
 
 			//FORMAT:
 			//[PUBKEY]
-			//Key Bytes...
+			//Length of Key
 			//[END]
 			receive();
 			if(!sStringBuffer.contains("[PUBKEY]"))
-				throw keyException;
-			log("Received Server Response:\n" + sStringBuffer);
+				throw new Exception("Invalid Public Key Received From Server");
+			log("Received Key Length String:\n" + sStringBuffer);
+			int length = new Integer(sStringBuffer.split("\n")[1]).intValue();
+			byte[] serverPubKeyBytes = receiveBytes(length);
 
 			//Parse Out the Encoded Public Key
-			byte[] serverPubKeyBytes = sStringBuffer.split("\n")[1].getBytes();
-			log("Parsed Server Public Key Bytes:\n" + serverPubKeyBytes);
+			//byte[] serverPubKeyBytes = sStringBuffer.split("\n")[1].getBytes();
+			//log("Parsed Server Public Key Bytes:\n" + serverPubKeyBytes);
 
 			//Instantiate DH Public Key From Bytes
 			KeyFactory kFac = KeyFactory.getInstance("DiffieHellman");
@@ -331,16 +336,17 @@ public class WEEUp {
 			//Send Client Public Key to Server
 			//FORMAT:
 			//[PUBKEY]
-			//Encoded Key Data...
+			//Public Key Length.
 			//[RECEIVED]
 			//[END]
-			send("[PUBKEY]\n" + pubKeyBytes + "\n[SUCCESS]");
-			log("Send Encoded Public Key to Server");
+			send("[PUBKEY]\n" + pubKeyBytes.length + "\n[RECEIVED]");
+			sendBytes(pubKeyBytes);
+			log("Sent Encoded Public Key to Server");
 
 			log("Waiting on Server Response");
 			receive();
 			if(!sStringBuffer.contains("[SUCCESS]"))
-				throw keyException;
+				throw new Exception("Error Sending Public Key to Server");
 			log("Received Server Response:\n" + sStringBuffer);
 
 			//Agree Those Keys
@@ -497,6 +503,33 @@ public class WEEUp {
 		return sStringBuffer;
 	}
 
+	public byte[] receiveBytes(int n) {
+		log("receiveBytes() START");
+		byte[] retVal = new byte[n];
+		log("Initialized retVal[" + retVal.length + "]");
+		int b;
+		try {
+			if(mRawInStream == null)
+				mRawInStream = mSocket.getInputStream();
+			log("Verified Input Stream");
+
+
+			log("Reading Bytes From Socket Input Stream");
+			for(int i = 0; i < retVal.length; i++) {
+				b = mRawInStream.read();
+				if(b != -1) retVal[i] = (byte)b;
+				else throw new Exception("Too Few Bytes, read " + i + " bytes");
+			}
+			if((b = mRawInStream.available()) > 0)
+				throw new Exception("Too Many Bytes, " + b + " bytes remaining");
+			log("Received " + retVal.length + " Bytes:\n" + new String(retVal));
+		} catch(Exception e) {
+			errorOut(e.toString(), e);
+		}
+		log("receiveBytes() DONE");
+		return retVal;
+	}
+
 	private String decrypt(String cipher) {
 		log("decrypt() START");
 		String plain = cipher;
@@ -517,6 +550,24 @@ public class WEEUp {
 			errorOut("ERROR: " + e, e);
 		}
 		log("send() DONE");
+	}
+
+	public boolean sendBytes(byte[] b) {
+		log("sendBytes() START");
+		try {
+			if(mRawOutStream == null)
+				mRawOutStream = mSocket.getOutputStream();
+			log("Verified Output Stream");
+
+			log("Sending " + b.length + " bytes to server:\n" + new String(b));
+			mRawOutStream.write(b);
+			mRawOutStream.flush();
+			log("Flushed Output Stream");
+		} catch(Exception e) {
+			errorOut(e.toString(), e);
+		}
+		log("sendBytes() DONE");
+		return true;
 	}
 
 	private String encrypt(String plain) {

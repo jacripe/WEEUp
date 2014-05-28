@@ -35,8 +35,14 @@ public class WEEUpD implements Runnable {
 	private ServerSocket	mServerSocket;
 	private Socket		mClientSocket;
 
+	private OutputStream	mRawOutStream = null;
+	private InputStream	mRawInStream = null;
+
 	private BufferedReader	mInputStream;
 	private PrintWriter	mOutputStream;
+
+	private ByteArrayInputStream	mByteInStream = null;
+	private ByteArrayOutputStream	mByteOutStream = null;
 
 	private File		fPasswd = new File("passwd");
 
@@ -128,13 +134,16 @@ public class WEEUpD implements Runnable {
 	public void run() {
 		log("run() START");
 		try {
+			mRawInStream = mClientSocket.getInputStream();
 			mInputStream = new BufferedReader(
-					new InputStreamReader(
-					mClientSocket.getInputStream()));
+					new InputStreamReader(mRawInStream));
+			//mByteInStream = (ByteArrayInputStream) mRawInStream;
 			log("Created Input Stream");
 
+			mRawOutStream = mClientSocket.getOutputStream();
 			mOutputStream = new PrintWriter(
-					mClientSocket.getOutputStream(), true);
+					mRawOutStream, true);
+			//mByteOutStream = new ByteArrayOutputStream();
 			log("Created Output Stream");
 
 			log("Starting Listen Loop");
@@ -408,10 +417,11 @@ public class WEEUpD implements Runnable {
 		return true;
 	}
 
+	//Adapted from Oracle documentation
+	//http://docs.oracle.com/javase/7/docs/technotes/guides/security/crypto/CryptoSpec.html#AppD
 	private boolean initEncryption() {
 		log("initEncryption() START");
 		try {
-			Exception keyException = new Exception("Error Initializing Encryption");
 			/* GENERATE PARAMETERS
  			AlgorithmParameterGenerator aPGen =
 				AlgorithmParameterGenerator.getInstance("DiffieHellman");
@@ -440,7 +450,8 @@ public class WEEUpD implements Runnable {
 			log("Encoded Server Public Key");
 
 			//Send Encoded Public Key to Client
-			send("[PUBKEY]\n" + pubKeyEnc);
+			send("[PUBKEY]\n" + pubKeyEnc.length);
+			sendBytes(pubKeyEnc);
 			log("Send Public Key to Client");
 
 			//Get Client Public Key
@@ -453,11 +464,12 @@ public class WEEUpD implements Runnable {
 			receive();
 			if(!sStringBuffer.contains("[RECEIVED]")
 			|| !sStringBuffer.contains("[PUBKEY]"))
-				throw keyException;
+				throw new Exception("Error Sending Public Key Bytes to Client");
 			log("Received Client Response:\n" + sStringBuffer);
 
 			//Parse Client Public Key
-			byte[] clientPubKeyBytes = sStringBuffer.split("\n")[1].getBytes();
+			int length = new Integer(sStringBuffer.split("\n")[1]).intValue();
+			byte[] clientPubKeyBytes = receiveBytes(length);
 			log("Parsed Encoded Client Public Key:\n" + clientPubKeyBytes);
 
 			//Instantiate Client Public Key
@@ -675,6 +687,32 @@ public class WEEUpD implements Runnable {
 		return true;
 	}
 
+	private boolean sendBytes(byte[] b) {
+		log("sendBytes() START");
+		try {
+			//Verify Our Output Stream
+			if(mRawOutStream == null)
+				mRawOutStream = mClientSocket.getOutputStream();
+			//if(mByteOutStream == null)
+			//	mByteOutStream = (ByteArrayOutputStream) mClientSocket.getOutputStream();
+			log("Verified Output Streams");
+
+			log("Sending " + b.length + " bytes to client:\n" + new String(b));
+			//for(int i = 0; i < b.length; i++)
+			//	mRawOutStream.write(b[i]);
+			mRawOutStream.write(b);
+			mRawOutStream.flush();
+			log("Flushed Output Stream");
+		} catch(Exception e) {
+			log("Error Sending Bytes to Client");
+			e.printStackTrace();
+			resetClient();
+			return false;
+		}
+		log("sendBytes() DONE");
+		return true;
+	}
+
 	private String encrypt(String plain) {
 		log("encrypt() START");
 		String cipher = plain;
@@ -712,6 +750,39 @@ public class WEEUpD implements Runnable {
 		}
 		log("receive() DONE");
 		return sStringBuffer;
+	}
+
+	public byte[] receiveBytes(int n) {
+		log("receiveBytes() START");
+		byte[] retVal = new byte[n];
+		log("Initialized retVal[" + retVal.length + "]");
+		int b;
+		try {
+			//Make sure we have a valid input stream
+			//if(mByteInStream == null)
+			//	mByteInStream = (ByteArrayInputStream) mClientSocket.getInputStream();
+			if(mRawInStream == null)
+				mRawInStream = mClientSocket.getInputStream();
+			log("Verified Input Stream");
+
+			//Loop through the length of our available buffer (1024 bytes)
+			log("Reading Bytes From Client Socket");
+			for(int i = 0; i < retVal.length; i++) {
+				b = mRawInStream.read();
+				if(b != -1) retVal[i] = (byte)b;
+				else throw new Exception("Too few bytes, read " + i + " bytes");
+			} //END For
+			if((b = mRawInStream.available()) > 0)
+				throw new Exception("Too many bytes, " + b + " bytes remaining");
+			log("Received " + retVal.length + " Bytes:\n" + new String(retVal));
+		} catch (Exception e) {
+			log("Error while receiving bytes from client");
+			e.printStackTrace();
+			resetClient();
+			return null;
+		}
+		log("receiveBytes() DONE");
+		return retVal;
 	}
 
 	private String decrypt(String cipher) {
