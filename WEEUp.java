@@ -43,19 +43,15 @@ public class WEEUp {
 	private Console		mConsole = System.console();
 
 	//Whether encryption has been initialized
-	private boolean			bEncrypt = false;
-	//Diffie-Hellman Values
-	//From Server
-	//private static BigInteger	nDHp;	//Modulus P
-	//private static BigInteger	nDHg;	//Generator G
-	//From Client
-	//private static BigInteger	nKx;	//Private X
-	//private static BigInteger	nKy;	//Private Y
-	//private static BigInteger	nKey;	//Private Key Value
+	private static boolean		bEncrypt = false;//Whether or not encryption is ready
+	private static String		sCipher = "DES";//Shared Cipher Algorithm
 
-	private static DHPrivateKey	mDHPrivKey;	//Private Key Object
-	private static DHPublicKey	mServerPubKey;	//Public Server Key
+	private static DHPrivateKey	mDHPrivKey;	//Private Client DH Key Object
+	private static DHPublicKey	mServerPubKey;	//Public Server DH Key
 	private static byte[]		aKeyBytes;	//Shared Secret Key Byte Array
+	private static SecretKey	mKey;		//Shared Secret Key Object
+	private static Cipher		mECipher;	//Cipher Object for Ecnryption
+	private static Cipher		mDCipher;	//Cipher Object for Decryption
 
 	//TODO Make Configurable
 	private static final int	nKeyLen = 1024;	//Key Length
@@ -374,10 +370,33 @@ public class WEEUp {
 			}
 			//Generate Symmetric Client Secret Key (Should Match Server)
 			length = kAgree.generateSecret(aKeyBytes, 0);
-			log("Generated Client Secret Key:\n" + toHexString(aKeyBytes));
+			log("Generated Client Secret Key Bytes:\n" + toHexString(aKeyBytes));
 
 			//Notify Server
+			send("[CIPHER]\n" + sCipher + "\n[SUCCESS]");
+			
+			//Generate Shared Secret Key Object from Bytes
+			kAgree.doPhase(pubKeyBytes, true);
+			mKey = kAgree.generateSecret(sCipher);
+			mECipher = Cipher.getInstance(sCipher);
+			mCipher.init(ENCRYPT_MODE, mKey);
+			mDCipher = Cipher.getInstance(sCipher);
+			mDCipher.init(DECRYPT_MODE, mKey);
+			bEncrypt = true;
+			log("Generated Client Secret Key & Cipher Objects Using " + sCipher + " Algorithm");
+
+			//Get Server Confirmation to Verify En/Decryption is functional
+			log("Waiting on Server Encryption Verification Test...");
+			receive();
+			if(!sStringBuffer.contains("[VERIFY_ENCRYPTION]"))
+				throw new Exception("Bad Server Encryption Test");
 			send("[SUCCESS]");
+
+			log("Waiting on Server Confirmation...");
+			receive();
+			if(!sStringBuffer.contains("[SUCCESS]"))
+				throw new Exception("Encryption Verification Failed");
+			log("SUCCESS! ENCRYPTION IS LIVE!");
 		} catch(Exception e) {
 			errorOut(e.toString(), e);
 		}
@@ -400,58 +419,6 @@ public class WEEUp {
 		log("toHexString() DONE");
 		return sBuff.toString();
 	} //END toHexString
-
-	//NOTE: This function was created as part of original specifications & should not be used
-	/*private boolean manKeyValGen() {
-		log("manKeyValGen() START");
-		try {
-			KeyPairGenerator kpGen = KeyPairGenerator.getInstance("DiffieHellman");
-			kpGen.initialize(1024);
-			log("Initialized Key Pair Generator");
-			KeyPair pair = kpGen.generateKeyPair();
-			log("Generated Key Pair");
-			KeyFactory kFactory = KeyFactory.getInstance("DiffieHellman");
-			DHPublicKeySpec kSpec = (DHPublicKeySpec) kFactory.getKeySpec(
-                        			pair.getPublic(), DHPublicKeySpec.class);
-			log("Initialized Key Factory & Obtained Spec");
-			log("Waiting on Diffie-Hellman Values...");
-			receive();
-			log("Received Server P String: " + sStringBuffer);
-			try { nDHp = new BigInteger(sStringBuffer.split("\n")[0]); }
-			catch(NumberFormatException e) { errorOut(e.toString(), e); }
-			send("[RECEIVED]");
-			receive();
-			log("Received Server G String: " + sStringBuffer);
-			try { nDHg = new BigInteger(sStringBuffer.split("\n")[0]); }
-			catch(NumberFormatException e) { errorOut(e.toString(), e); }
-			send("[RECEIVED]");
-			
-			log("Generating Private Key Values");
-			nKx = new BigInteger(nKeyLen-1, nPrimeCert, mSecRan);
-			log("KeyX: " + nKx.toString());
-			nKy = nDHg.modPow(nKx, nDHp);
-			log("KeyY: " + nKy.toString());
-			log("Waiting on Server g^x mod p...");
-			receive();
-			log("Received Server Y Value: " + sStringBuffer);
-			try { nKey = new BigInteger(sStringBuffer.split("\n")[0]); }
-			catch(NumberFormatException e) { errorOut(e.toString(), e); }
-			send("[RECEIVED]");
-			send(nKy.toString());
-			receive();
-			if(!sStringBuffer.contains("[RECEIVED]")) {
-				errorOut("Failed Sending Y Value to Server",
-					new Exception("Encryption Initialization Error"));
-			}
-			nKey = nKey.modPow(nKx, nDHp);
-			log("Generated Key: " + nKey.toString());
-		} catch(Exception e) {
-			errorOut("Enctyption Initialization Error", e);
-		}
-		log("manKeyValGen() DONE");
-		//return true;
-		return false; //Always return false because it should not be used
-	}*/
 
 	public static String md5(String str) {
 		//log("md5() START");
@@ -522,20 +489,17 @@ public class WEEUp {
 		log("receive() START");
 		sLineBuffer = sStringBuffer = "";
 		try {
-			int i = 0;
 			while(!sLineBuffer.equals("[END]")) {
-				//log("while loop " + i); i++;
 				sLineBuffer = mInputStream.readLine();
 				if(sLineBuffer == null)
-					errorOut("Received NULL from Server",
-						new Exception("NULL Server Input"));
-				else {
-					if(bEncrypt)
-						sLineBuffer = decrypt(sLineBuffer);
-					log("Received: " + sLineBuffer);
-					sStringBuffer += sLineBuffer + "\n";
-				}
+					throw new Exception("NULL Server Input");
+				log("Received: " + sLineBuffer);
+				sStringBuffer += sLineBuffer + "\n";
 			} //END while
+			if(bEncrypt) {
+				if(!sStringBuffer.contains("[ENCODED]"))
+					throw new Exception("Unencrypted Transmission During Encryption");
+			}
 		} catch(Exception e) {
 			errorOut("Error: " + e, e);
 		}

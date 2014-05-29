@@ -49,18 +49,14 @@ public class WEEUpD implements Runnable {
 	private State		mState;
 
 	//Whether encryption has been initialized
-	private boolean			bEncrypt = false; 
-	
-	//Diffie-Hellman Values
-	//private static BigInteger 	nDHp;	//Modulus P
-	//private static BigInteger	nDHg;	//Genertor G
-	//private static BigInteger	nKx;	//Private X value
-	//private static BigInteger	nKy;	//Private Y value
-	//private static BigInteger	nKey;	//Private Key Value
+	private static boolean		bEncrypt = false; //Whether or not Encryption is Available
+	private static String		sCipher;	//Cipher Algorithm to Use for Encryption
+	private static Cipher		mCipher;	//Cipher Object for Encryption
 
 	private static DHPrivateKey	mDHKey;		//DH Private Key Object
 	private static DHPublicKey	mClientKey;	//Client Public Key Object
 	private static byte[]		aKeyBytes;	//Shared Secret Key Byte Array
+	private static SecretKey	mKey;		//Shared Secret Key Object
 
 	//TODO Make configurable
 	private static final int	nKeyLen = 1024; //Length of Key
@@ -485,6 +481,8 @@ public class WEEUpD implements Runnable {
 
 			//Generate Shared SecretKey
 			aKeyBytes = kAgree.generateSecret();
+			log("Generated Server Secret Key:\n" + toHexString(aKeyBytes));
+			
 			//Notify Client
 			//FORMAT:
 			//[PRIVKEY]
@@ -493,12 +491,43 @@ public class WEEUpD implements Runnable {
 			//[END]
 			send("[PRIVKEY]\n" + aKeyBytes.length + "\n[RECEIVED]");
 			log("Sent Secret Key Length to Client");
+			log("Waiting on Client Confirmation...");
 
-			//Get Client Confirmation
+			//Get Client Confirmation & Cipher Choice
+			//FORMAT:
+			//[CIPHER]
+			//Cipher Algorithm
+			//[SUCCESS]
+			//[END]
+			receive();
+			if(!sStringBuffer.contains("[SUCCESS]")
+			|| !sStringBuffer.contains("[CIPHER]"))
+				throw new Exception("Key Agreement Error");
+			sCipher = sStringBuffer.split("\n")[1];
+			log("Received Client Cipher Selection: " + sCipher);
+
+			//Prep the KeyAgreement Object for Secret Key Generation
+			kAgree.doPhase(clientPubKeyBytes, true);
+
+			//Generate Secret Key & Cipher Object
+			mKey = kAgree.generateSecret(sCipher);
+			mECipher = Cipher.getInstance(sCipher);
+			mECipher.init(Cipher.ENCRYPT_MODE, mKey);
+			mDCipher = Cipher.getInstance(sCipher);
+			mDCipher.init(Cipher.DECRYPT_MODE, mKey);
+			bEncrypt = true;
+			log("Generated Server Secret Key & Cipher Objects Using " + sCipher + " Algorithm");
+
+			//Test En/Decryption
+			log("Sending client encryption verification string...")
+			send("[VERIFY_ENCRYPTION]");
+
+			log("Waiting on client response...");
 			receive();
 			if(!sStringBuffer.contains("[SUCCESS]"))
-				throw new Exception("Key Agreement Error");
-			log("Generated Server Secret Key:\n" + toHexString(aKeyBytes));
+				throw new Exception("Bad Client Encryption Verification Response");
+			send("[SUCCESS]");
+			log("SUCCESS! ENCRYPTION IS LIVE");
 		} catch(Exception e) {
 			log("Error During Encryption Initialization!");
 			e.printStackTrace();
@@ -524,78 +553,6 @@ public class WEEUpD implements Runnable {
 		log("toHexString() DONE");
 		return sBuff.toString();
 	}
-
-	//NOTE: This function was created as part of the original specifications and should not be used
-	/*private boolean manualKeyValGen() {
-		log("manualKeyValGen() START");
-		try {
-			//Generate initial Diffie-Hellman Values
-			KeyPairGenerator kpGen = KeyPairGenerator.getInstance("DiffieHellman");
-			kpGen.initialize(nKeyLen);
-			log("Initialized Key Pair Generator with Diffie-Hellman");
-			KeyPair pair = kpGen.generateKeyPair();
-			log("Generated Key Pair");
-			KeyFactory kFactory = KeyFactory.getInstance("DiffieHellman");
-			DHPublicKeySpec kSpec = (DHPublicKeySpec) kFactory.getKeySpec(
-						pair.getPublic(), DHPublicKeySpec.class);
-			log("Initialized Key Factory & Obtained Public Key Spec");
-			nDHp = kSpec.getP();
-			nDHg = kSpec.getG();
-			log("DH Values:\np = " + nDHp.toString() + "\n"
-			+ "g = " + nDHg.toString());
-
-			//Distribute DH Values to Client
-			send(nDHp.toString());
-			receive();
-			if(!sStringBuffer.contains("[RECEIVED]")) {
-				log("Failed Sending Prime Modulus P to Client");
-				resetClient();
-				return false;
-			}
-			send(nDHg.toString());
-			receive();
-			if(!sStringBuffer.contains("[RECEIVED]")) {
-				log("Failed Sending Generator G to Client");
-				resetClient();
-				return false;
-			}
-
-			log("Generating Private Key Values");
-			//Select Random Key X/Y Values
-			nKx = new BigInteger(nKeyLen-1, nPrimeCert, mSecRan);
-			log("KeyX: " + nKx.toString());
-			nKy = nDHg.modPow(nKx, nDHp);
-			log("KeyY: " + nKy.toString());
-			log("Sending G^x mod P to Client...");
-			send(nKy.toString());
-			receive();
-			if(!sStringBuffer.contains("[RECEIVED]")) {
-				log("Failed Sending G^x mod P to Client");
-				resetClient();
-				return false;
-			}
-			log("Waiting on Client's G^x mod P Value");
-			receive();
-			log("Received Client's Y Value: " + sStringBuffer);
-			try { nKey = new BigInteger(sStringBuffer.split("\n")[0]); }
-			catch(NumberFormatException e) {
-				log("Invalid G^x mod P Value From Client!");
-				resetClient();
-				return false;
-			}
-			send("[RECEIVED]");
-			nKey = nKey.modPow(nKx, nDHp);
-			log("Generated Key: " + nKey.toString());
-			
-		} catch(Exception e) {
-			log("Error during encryption initialization...");
-			resetClient();
-			return false;
-		}
-		log("manKeyValGen() DONE");
-		//return true;
-		return false; //Function always returns false as it should not be used
-	}*/
 
 	private boolean mainMenu() {
 		log("mainMenu() START");
@@ -701,12 +658,18 @@ public class WEEUpD implements Runnable {
 	private boolean send(String s) {
 		log("send() START");
 		s += "\n[END]";
-		if(bEncrypt)
-			s = encrypt(s);
+		if(bEncrypt) {
+			byte[] b = encrypt(s);
+			send("[ENCODED]\n" + b.length);
+			sendBytes(b);
+			receive();
+			if(!sStringBuffer.contains("[RECEIVED]"))
+				throw new Exception("Encrypted Transmission Error");
+		}
 		log("Sending String to Client:\n" + s + "|Fin.");
 		try { mOutputStream.println(s); }
 		catch(Exception e) {
-			log("Error while sending output to client");
+			log("Error while sending string to client");
 			e.printStackTrace();
 			resetClient();
 			return false;
@@ -741,9 +704,16 @@ public class WEEUpD implements Runnable {
 		return true;
 	}
 
-	private String encrypt(String plain) {
+	private byte[] encrypt(String plain) {
 		log("encrypt() START");
-		String cipher = plain;
+		byte[] cipher;
+		try {
+			cipher = mECipher.doFinal(plain);
+		} catch(Exception e) {
+			log("Error Performing Encryption:\n\t" + e.toString());
+			e.printStackTrace();
+			resetClient();
+			return null;
 		log("encrypt() DONE");
 		return cipher;
 	}
