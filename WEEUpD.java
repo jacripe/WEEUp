@@ -51,7 +51,8 @@ public class WEEUpD implements Runnable {
 	//Whether encryption has been initialized
 	private static boolean		bEncrypt = false; //Whether or not Encryption is Available
 	private static String		sCipher;	//Cipher Algorithm to Use for Encryption
-	private static Cipher		mCipher;	//Cipher Object for Encryption
+	private static Cipher		mECipher;	//Cipher Object for Encryption
+	private static Cipher		mDCipher;	//Cipher Object for Decryption
 
 	private static DHPrivateKey	mDHKey;		//DH Private Key Object
 	private static DHPublicKey	mClientKey;	//Client Public Key Object
@@ -507,8 +508,10 @@ public class WEEUpD implements Runnable {
 			log("Received Client Cipher Selection: " + sCipher);
 
 			//Prep the KeyAgreement Object for Secret Key Generation
-			kAgree.doPhase(clientPubKeyBytes, true);
+			kAgree.doPhase(mClientKey, true);
 
+			//Cipher mECipher;
+			//Cipher mDCipher;
 			//Generate Secret Key & Cipher Object
 			mKey = kAgree.generateSecret(sCipher);
 			mECipher = Cipher.getInstance(sCipher);
@@ -516,10 +519,11 @@ public class WEEUpD implements Runnable {
 			mDCipher = Cipher.getInstance(sCipher);
 			mDCipher.init(Cipher.DECRYPT_MODE, mKey);
 			bEncrypt = true;
-			log("Generated Server Secret Key & Cipher Objects Using " + sCipher + " Algorithm");
+			log("Generated Server Secret Key & Cipher Objects Using "
+			   + sCipher + " Algorithm");
 
 			//Test En/Decryption
-			log("Sending client encryption verification string...")
+			log("Sending client encryption verification string...");
 			send("[VERIFY_ENCRYPTION]");
 
 			log("Waiting on client response...");
@@ -658,17 +662,23 @@ public class WEEUpD implements Runnable {
 	private boolean send(String s) {
 		log("send() START");
 		s += "\n[END]";
-		if(bEncrypt) {
-			byte[] b = encrypt(s);
-			send("[ENCODED]\n" + b.length);
-			sendBytes(b);
-			receive();
-			if(!sStringBuffer.contains("[RECEIVED]"))
-				throw new Exception("Encrypted Transmission Error");
-		}
-		log("Sending String to Client:\n" + s + "|Fin.");
-		try { mOutputStream.println(s); }
-		catch(Exception e) {
+		try {
+			if(bEncrypt) {
+				byte[] b = encrypt(s);
+				log("Sending Notification");
+				mOutputStream.println("[ENCODED]\n" + b.length + "\n[END]");
+				log("Sending Encoded Message Of " + b.length + " Bytes");
+				sendBytes(b);
+				log("Waiting on client confirmation...");
+				receive();
+				if(!sStringBuffer.contains("[RECEIVED]"))
+					throw new Exception("Encrypted Transmission Error");
+				log("Successfully Sent Encrypted Message");
+				return true;
+			}
+			log("Sending String to Client:\n" + s + "|Fin.");
+				mOutputStream.println(s);
+		} catch(Exception e) {
 			log("Error while sending string to client");
 			e.printStackTrace();
 			resetClient();
@@ -689,8 +699,6 @@ public class WEEUpD implements Runnable {
 			log("Verified Output Streams");
 
 			log("Sending " + b.length + " bytes to client:\n" + toHexString(b));
-			//for(int i = 0; i < b.length; i++)
-			//	mRawOutStream.write(b[i]);
 			mRawOutStream.write(b);
 			mRawOutStream.flush();
 			log("Flushed Output Stream");
@@ -699,66 +707,83 @@ public class WEEUpD implements Runnable {
 			e.printStackTrace();
 			resetClient();
 			return false;
-		}
+		} //END try/catch
 		log("sendBytes() DONE");
 		return true;
-	}
+	} //END sendBytes()
 
 	private byte[] encrypt(String plain) {
 		log("encrypt() START");
 		byte[] cipher;
 		try {
-			cipher = mECipher.doFinal(plain);
+			cipher = mECipher.doFinal(plain.getBytes());
 		} catch(Exception e) {
 			log("Error Performing Encryption:\n\t" + e.toString());
 			e.printStackTrace();
 			resetClient();
 			return null;
+		} //END try/catch
 		log("encrypt() DONE");
 		return cipher;
-	}
+	} //END encrypt()
 
 	public String receive() {
 		log("receive() START");
-		String retVal = "";
+		//Clear buffers
 		sLineBuffer = sStringBuffer = "";
 		try {
+			//As long as haven't gotten the end notification...
 			while(!sLineBuffer.equals("[END]")) {
+				//...keep pulling data
 				sLineBuffer = mInputStream.readLine();
+				//If we received null input from socket...
 				if(sLineBuffer == null) {
+					//...something went wrong
 					log("Received NULL from Client");
 					resetClient();
 					return null;
 				} else {
-					if(bEncrypt)
-						sLineBuffer = decrypt(sLineBuffer);
+					//...otherwise we're good
 					log("Received: " + sLineBuffer);
+					//If it's the quit string, we should kill connection
 					if(sLineBuffer.equals("[QUIT]")) {
 						log("Received Quit String");
 						resetClient();
 					} else if(!sLineBuffer.equals("[END]"))
 						sStringBuffer += sLineBuffer + "\n";
-				}
-			}
+					//END if/else if
+				} //END if/else
+			} //END while
+
+			//If a secure transmission...
+			if(bEncrypt) {
+				//Make sure we're receiving a secure transmission
+				if(!sStringBuffer.contains("[ENCODED]"))
+					throw new Exception("Insecure Transmission!");
+				//Check length of transmission
+				int length = new Integer(sStringBuffer.split("\n")[1]).intValue();
+				//Receive & Decrypt Transmission
+				sStringBuffer = decrypt(receiveBytes(length));
+				log("Received Encrypted Message:\n" + sStringBuffer);
+			} //END if Encrypted
 		} catch(Exception e) {
 			log("Error while receiving input from client");
 			e.printStackTrace();
 			resetClient();
 			return null;
-		}
+		} //END try/catch
 		log("receive() DONE");
 		return sStringBuffer;
-	}
+	} //END receive()
 
 	public byte[] receiveBytes(int n) {
 		log("receiveBytes() START");
+		//Initialize Return Value & Byte Buffer
 		byte[] retVal = new byte[n];
-		log("Initialized retVal[" + retVal.length + "]");
 		int b;
+		log("Initialized retVal[" + retVal.length + "]");
 		try {
 			//Make sure we have a valid input stream
-			//if(mByteInStream == null)
-			//	mByteInStream = (ByteArrayInputStream) mClientSocket.getInputStream();
 			if(mRawInStream == null)
 				mRawInStream = mClientSocket.getInputStream();
 			log("Verified Input Stream");
@@ -769,29 +794,43 @@ public class WEEUpD implements Runnable {
 				b = mRawInStream.read();
 				if(b != -1) retVal[i] = (byte)b;
 				else throw new Exception("Too few bytes, read " + i + " bytes");
-			} //END For
+			} //END for
+			//If any bytes are still remaining...
 			if((b = mRawInStream.available()) > 0)
+				//...then something fucked up
 				throw new Exception("Too many bytes, " + b + " bytes remaining");
+			//Otherwise, we're good
 			log("Received " + retVal.length + " Bytes:\n" + toHexString(retVal));
 		} catch (Exception e) {
 			log("Error while receiving bytes from client");
 			e.printStackTrace();
 			resetClient();
 			return null;
-		}
+		} //END try/catch
 		log("receiveBytes() DONE");
 		return retVal;
-	}
+	} //END receiveBytes()
 
-	private String decrypt(String cipher) {
+	private String decrypt(byte[] cipher) {
 		log("decrypt() START");
-		String plain = cipher;
+		String plain = null;
+		log("Initialized Return Value");
+		try {
+			//Decrypt & Convert to String
+			plain = new String(mDCipher.doFinal(cipher));
+		} catch(Exception e) {
+			log("Error During Decryption: " + e.toString());
+			e.printStackTrace();
+			resetClient();
+			return null;
+		} //END try/catch
 		log("decrypt() DONE");
 		return plain;
-	}
+	} //END decrypt()
 
-	public void resetClient() {
+	public boolean resetClient() {
 		log("resetClient() START");
+		//Close all streams & reset to initial state
 		try {
 			mOutputStream.close();
 			log("Closed Output Stream");
@@ -802,28 +841,29 @@ public class WEEUpD implements Runnable {
 			mClientSocket.close();
 			log("Closed Client Socket");
 
-			mState = State.START; //LOGIN;
+			mState = State.START;
 			bEncrypt = false;
 		} catch(Exception e) {
 			errorOut("ERROR: " + e, e);
-		}
+		} //END try/catch
 		log("resetClient() DONE");
-	}
+		return false;
+	} //END resetClient()
 
 	public static void printUsage() {
 		String msg = "USAGE: java WEEUpD [port] [host]\n";
 		System.out.println(msg);
-	}
+	} //END printUsage()
 
 	public static void log(String s) {
 		System.out.println((new Date()).toString() + " (SERVER): " + s);
-	}
+	} //END log()
 
 	public static void errorOut(String msg, Exception e) {
 		log(msg);
 		e.printStackTrace();
 		System.exit(-1);
-	}
+	} //END errorOut
 
 
 //**************************************************************
@@ -862,10 +902,8 @@ public class WEEUpD implements Runnable {
 	        (byte)0x19, (byte)0x26, (byte)0xBA, (byte)0xAB,
 	        (byte)0xA2, (byte)0x5E, (byte)0xC3, (byte)0x55,
 	        (byte)0xE9, (byte)0x2F, (byte)0x78, (byte)0xC7
-	};
+	}; //END SKIP Protocol
 
-	private static final BigInteger		skip1024Modulus = 
-		new BigInteger(1, skip1024ModulusBytes);
-	private static final BigInteger		skip1024Base =
-		BigInteger.valueOf(2);
-}
+	private static final BigInteger	skip1024Modulus = new BigInteger(1, skip1024ModulusBytes);
+	private static final BigInteger	skip1024Base = BigInteger.valueOf(2);
+} //END WEEUpD

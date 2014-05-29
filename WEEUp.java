@@ -376,14 +376,15 @@ public class WEEUp {
 			send("[CIPHER]\n" + sCipher + "\n[SUCCESS]");
 			
 			//Generate Shared Secret Key Object from Bytes
-			kAgree.doPhase(pubKeyBytes, true);
+			kAgree.doPhase(mServerKey, true);
 			mKey = kAgree.generateSecret(sCipher);
 			mECipher = Cipher.getInstance(sCipher);
-			mCipher.init(ENCRYPT_MODE, mKey);
+			mECipher.init(Cipher.ENCRYPT_MODE, mKey);
 			mDCipher = Cipher.getInstance(sCipher);
-			mDCipher.init(DECRYPT_MODE, mKey);
+			mDCipher.init(Cipher.DECRYPT_MODE, mKey);
 			bEncrypt = true;
-			log("Generated Client Secret Key & Cipher Objects Using " + sCipher + " Algorithm");
+			log("Generated Client Secret Key & Cipher Objects Using "
+			   + sCipher + " Algorithm");
 
 			//Get Server Confirmation to Verify En/Decryption is functional
 			log("Waiting on Server Encryption Verification Test...");
@@ -495,24 +496,31 @@ public class WEEUp {
 					throw new Exception("NULL Server Input");
 				log("Received: " + sLineBuffer);
 				sStringBuffer += sLineBuffer + "\n";
-			} //END while
+			} //END While
+
+			//If this is a secure transmission...
 			if(bEncrypt) {
 				if(!sStringBuffer.contains("[ENCODED]"))
-					throw new Exception("Unencrypted Transmission During Encryption");
-			}
+					throw new Exception("Insecure Transmission!");
+				int length = new Integer(sStringBuffer.split("\n")[1]).intValue();
+				sStringBuffer = decrypt(receiveBytes(length));
+				log("Received Encrypted Message:\n" + sStringBuffer);
+			} //END If Encrypted
 		} catch(Exception e) {
 			errorOut("Error: " + e, e);
-		}
+		} //END Try/Catch
 		log("receive() DONE");
 		return sStringBuffer;
-	}
+	} //END Receive
 
 	public byte[] receiveBytes(int n) {
 		log("receiveBytes() START");
+		//Initialize Return Value & Byte Buffer
 		byte[] retVal = new byte[n];
 		log("Initialized retVal[" + retVal.length + "]");
 		int b;
 		try {
+			//Verify Input Stream
 			if(mRawInStream == null)
 				mRawInStream = mSocket.getInputStream();
 			log("Verified Input Stream");
@@ -523,38 +531,57 @@ public class WEEUp {
 				b = mRawInStream.read();
 				if(b != -1) retVal[i] = (byte)b;
 				else throw new Exception("Too Few Bytes, read " + i + " bytes");
-			}
+			} //END For
 			if((b = mRawInStream.available()) > 0)
 				throw new Exception("Too Many Bytes, " + b + " bytes remaining");
 			log("Received " + retVal.length + " Bytes:\n" + toHexString(retVal));
 		} catch(Exception e) {
 			errorOut(e.toString(), e);
-		}
+		} //END Try/Catch
 		log("receiveBytes() DONE");
 		return retVal;
-	}
+	} //END Receive Bytes
 
-	private String decrypt(String cipher) {
+	private String decrypt(byte[] cipher) {
 		log("decrypt() START");
-		String plain = cipher;
+		//Initialize Return Value
+		String plain = null;
+		try {
+			//Decrypt & Convert to String
+			plain = new String(mDCipher.doFinal(cipher));
+		} catch(Exception e) {
+			errorOut(e.toString(), e);
+		} //END Try/Catch
 		log("decrypt() DONE");
 		return plain;
-	}
+	} //END Decrypt()
 
-	public void send(String msg) {
+	public boolean send(String msg) {
 		log("send() START");
 		try {
+			if(bEncrypt) {
+				byte[] c = encrypt(msg);
+				log("Sending Notification");
+				mOutputStream.println("[ENCODED]\n" + c.length + "\n[END]");
+				log("Sending Encrypted Message Of " + c.length + " Bytes");
+				sendBytes(c);
+				log("Waiting on client confirmation...");
+				receive();
+				if(!sStringBuffer.contains("[RECEIVED]"))
+					throw new Exception("Error Sending Secure Transmission");
+				log("Successfully Sent Encrypted Message");
+				return true;
+			}
 			msg += "\n[END]";
-			if(bEncrypt)
-				msg = encrypt(msg);
 			log("Sending String: " + msg);
 			mOutputStream.println(msg);
 			log("String Sent");
 		} catch(Exception e) {
 			errorOut("ERROR: " + e, e);
-		}
+		} //END Try/Catch
 		log("send() DONE");
-	}
+		return true;
+	} //END Send()
 
 	public boolean sendBytes(byte[] b) {
 		log("sendBytes() START");
@@ -574,12 +601,18 @@ public class WEEUp {
 		return true;
 	}
 
-	private String encrypt(String plain) {
+	private byte[] encrypt(String plain) {
 		log("encrypt() START");
-		String cipher = plain;
+		byte[] cipher = null;
+		try {
+			//Convert String to Bytes & Encrypt
+			cipher = mECipher.doFinal(plain.getBytes());
+		} catch(Exception e) {
+			errorOut(e.toString(), e);
+		} //END try/catch
 		log("encrypt() DONE");
 		return cipher;
-	}
+	} //END encrypt()
 
 	public static WEEUp parseArgs(String[] a) {
 		log("parseArgs() START");
