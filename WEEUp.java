@@ -39,6 +39,9 @@ public class WEEUp {
 
 	private InputStream	mRawInStream;
 	private OutputStream	mRawOutStream;
+
+	private DataInputStream		mDInStream;
+	private DataOutputStream	mDOutStream;
 	
 	private Console		mConsole = System.console();
 
@@ -105,12 +108,16 @@ public class WEEUp {
 		try {
 			mSocket = new Socket(sHostName, nPort);
 			log("Created Socket");
+			mRawInStream = mSocket.getInputStream();
+			mDInStream = new DataInputStream(mRawInStream);
 			mInputStream = new BufferedReader(
 					new InputStreamReader(
-					mSocket.getInputStream()));
+					mRawInStream));
 			log("Created Input Stream");
-			mOutputStream = new PrintWriter(
-					mSocket.getOutputStream(), true);
+			mRawOutStream = mSocket.getOutputStream();
+			mDOutStream = new DataOutputStream(mRawOutStream);
+			mOutputStream = new PrintWriter(mRawOutStream, true);
+
 			log("Created Output Stream");
 			sStringBuffer = null;
 			bEncrypt = false;
@@ -288,21 +295,7 @@ public class WEEUp {
 		log("initEncryption() START");
 		try {
 			log("Waiting on Key Data From Server...");
-
-			//FORMAT:
-			//[PUBKEY]
-			//Length of Key
-			//[END]
-			receive();
-			if(!sStringBuffer.contains("[PUBKEY]"))
-				throw new Exception("Invalid Public Key Received From Server");
-			log("Received Key Length String:\n" + sStringBuffer);
-			int length = new Integer(sStringBuffer.split("\n")[1]).intValue();
-			byte[] serverPubKeyBytes = receiveBytes(length);
-
-			//Parse Out the Encoded Public Key
-			//byte[] serverPubKeyBytes = sStringBuffer.split("\n")[1].getBytes();
-			//log("Parsed Server Public Key Bytes:\n" + serverPubKeyBytes);
+			byte[] serverPubKeyBytes = receiveBytes();
 
 			//Instantiate DH Public Key From Bytes
 			KeyFactory kFac = KeyFactory.getInstance("DiffieHellman");
@@ -330,13 +323,9 @@ public class WEEUp {
 			byte[] pubKeyBytes = keyPair.getPublic().getEncoded();
 			log("Encoded Public Key:\n" + toHexString(pubKeyBytes));
 
+			//Send Notification to Server
+			send("[RECEIVED]");
 			//Send Client Public Key to Server
-			//FORMAT:
-			//[PUBKEY]
-			//Public Key Length
-			//[RECEIVED]
-			//[END]
-			send("[PUBKEY]\n" + pubKeyBytes.length + "\n[RECEIVED]");
 			sendBytes(pubKeyBytes);
 			log("Sent Encoded Public Key to Server");
 
@@ -356,26 +345,18 @@ public class WEEUp {
 			kAgree.doPhase(mServerKey, true);
 			log("Client Key Agreement Complete");
 
+			//Generate Symmetric Client Secret Key (Should Match Server)
 			if(!sStringBuffer.contains("[PRIVKEY]"))
 				throw new Exception("Error Receiving Secret Key Length From Server");
-			length = new Integer(sStringBuffer.split("\n")[1]).intValue();
-			
-			//TODO Remove this block...
+			int length = new Integer(sStringBuffer.split("\n")[1]).intValue();
 			aKeyBytes = new byte[length];
-			try {
-				length = kAgree.generateSecret(aKeyBytes, 1);
-			} catch(Exception e) {
-				log("This was intentional & should be removed");
-				e.printStackTrace();
-			}
-			//Generate Symmetric Client Secret Key (Should Match Server)
 			length = kAgree.generateSecret(aKeyBytes, 0);
 			log("Generated Client Secret Key Bytes:\n" + toHexString(aKeyBytes));
 
 			//Notify Server
 			send("[CIPHER]\n" + sCipher + "\n[SUCCESS]");
 			
-			//Generate Shared Secret Key Object from Bytes
+			//Generate Symetric Secret Key & Cipher Objects from Bytes
 			kAgree.doPhase(mServerKey, true);
 			mKey = kAgree.generateSecret(sCipher);
 			mECipher = Cipher.getInstance(sCipher);
@@ -490,22 +471,25 @@ public class WEEUp {
 		log("receive() START");
 		sLineBuffer = sStringBuffer = "";
 		try {
+			//If this is a secure transmission...
+			if(bEncrypt) {
+				//Read Bytes & Decrypt
+				sStringBuffer = decrypt(receiveBytes());
+				if(sStringBuffer == null)
+					throw new Exception("NULL Server Input");
+				sStringBuffer = sStringBuffer.trim();
+				log("Received:\n" + sStringBuffer);
+				return sStringBuffer;
+			} //END if
+
+			//Otherwise proceed normally
 			while(!sLineBuffer.equals("[END]")) {
 				sLineBuffer = mInputStream.readLine();
 				if(sLineBuffer == null)
 					throw new Exception("NULL Server Input");
-				log("Received: " + sLineBuffer);
+				log("Received: " + sLineBuffer.trim());
 				sStringBuffer += sLineBuffer + "\n";
 			} //END While
-
-			//If this is a secure transmission...
-			if(bEncrypt) {
-				if(!sStringBuffer.contains("[ENCODED]"))
-					throw new Exception("Insecure Transmission!");
-				int length = new Integer(sStringBuffer.split("\n")[1]).intValue();
-				sStringBuffer = decrypt(receiveBytes(length));
-				log("Received Encrypted Message:\n" + sStringBuffer);
-			} //END If Encrypted
 		} catch(Exception e) {
 			errorOut("Error: " + e, e);
 		} //END Try/Catch
@@ -513,36 +497,29 @@ public class WEEUp {
 		return sStringBuffer;
 	} //END Receive
 
-	public byte[] receiveBytes(int n) {
+	public byte[] receiveBytes() {
 		log("receiveBytes() START");
-		//Initialize Return Value & Byte Buffer
-		byte[] retVal = new byte[n];
-		log("Initialized retVal[" + retVal.length + "]");
+		byte[] retVal = null;
 		int b;
 		try {
-			//Verify Input Stream
-			if(mRawInStream == null)
-				mRawInStream = mSocket.getInputStream();
-			log("Verified Input Stream");
-
-
-			log("Reading Bytes From Socket Input Stream");
-			for(int i = 0; i < retVal.length; i++) {
-				b = mRawInStream.read();
-				if(b != -1) retVal[i] = (byte)b;
-				else throw new Exception("Too Few Bytes, read " + i + " bytes");
-			} //END For
-			if((b = mRawInStream.available()) > 0)
-				throw new Exception("Too Many Bytes, " + b + " bytes remaining");
-			log("Received " + retVal.length + " Bytes:\n" + toHexString(retVal));
+			int l = mDInStream.readInt();
+			retVal = new byte[l];
+			log("Initialized retVal[" + l + "]");
+			log("Reading " + l + " Bytes From Input Stream");
+			if(l > 0)
+				mDInStream.readFully(retVal);
+			//if((b = mRawInStream.available()) > 0)
+			//	throw new Exception("Too Many Bytes, " + b + " remaining");
+			log("Received Bytes:\n" + toHexString(retVal));
 		} catch(Exception e) {
 			errorOut(e.toString(), e);
-		} //END Try/Catch
+		} //END try/catch
 		log("receiveBytes() DONE");
 		return retVal;
-	} //END Receive Bytes
+	}
 
 	private String decrypt(byte[] cipher) {
+		if(cipher == null) return null;
 		log("decrypt() START");
 		//Initialize Return Value
 		String plain = null;
@@ -559,19 +536,17 @@ public class WEEUp {
 	public boolean send(String msg) {
 		log("send() START");
 		try {
+			//If a secure transmission...
 			if(bEncrypt) {
+				//Encrypt it...
 				byte[] c = encrypt(msg);
-				log("Sending Notification");
-				mOutputStream.println("[ENCODED]\n" + c.length + "\n[END]");
-				log("Sending Encrypted Message Of " + c.length + " Bytes");
-				sendBytes(c);
-				log("Waiting on client confirmation...");
-				receive();
-				if(!sStringBuffer.contains("[RECEIVED]"))
-					throw new Exception("Error Sending Secure Transmission");
+				//& send
+				if(!sendBytes(c)) return false;
 				log("Successfully Sent Encrypted Message");
 				return true;
-			}
+			} //END if
+
+			//Otherwise, proceed normally
 			msg += "\n[END]";
 			log("Sending String: " + msg);
 			mOutputStream.println(msg);
@@ -584,24 +559,21 @@ public class WEEUp {
 	} //END Send()
 
 	public boolean sendBytes(byte[] b) {
+		if(b == null) return false;
 		log("sendBytes() START");
 		try {
-			if(mRawOutStream == null)
-				mRawOutStream = mSocket.getOutputStream();
-			log("Verified Output Stream");
-
 			log("Sending " + b.length + " bytes to server:\n" + toHexString(b));
+			mDOutStream.writeInt(b.length);
 			mRawOutStream.write(b);
-			mRawOutStream.flush();
-			log("Flushed Output Stream");
 		} catch(Exception e) {
 			errorOut(e.toString(), e);
-		}
+		} //END try/catch
 		log("sendBytes() DONE");
 		return true;
 	}
 
 	private byte[] encrypt(String plain) {
+		if(plain == null) return null;
 		log("encrypt() START");
 		byte[] cipher = null;
 		try {
@@ -663,8 +635,8 @@ public class WEEUp {
 				+ "Or Contact admin@wiseeyesent.com if you require assistance.");
 	}
 
-	public static void quit() {
-		//send("[QUIT]");
+	public void quit() {
+		send("[QUIT]");
 		log("Good Bye!");
 		System.exit(0);
 	}

@@ -41,8 +41,8 @@ public class WEEUpD implements Runnable {
 	private BufferedReader	mInputStream;
 	private PrintWriter	mOutputStream;
 
-	private ByteArrayInputStream	mByteInStream = null;
-	private ByteArrayOutputStream	mByteOutStream = null;
+	private DataInputStream		mDInStream;
+	private DataOutputStream	mDOutStream;
 
 	private File		fPasswd = new File("passwd");
 
@@ -133,12 +133,14 @@ public class WEEUpD implements Runnable {
 		log("run() START");
 		try {
 			mRawInStream = mClientSocket.getInputStream();
+			mDInStream = new DataInputStream(mRawInStream);
 			mInputStream = new BufferedReader(
 					new InputStreamReader(mRawInStream));
 			//mByteInStream = (ByteArrayInputStream) mRawInStream;
 			log("Created Input Stream");
 
 			mRawOutStream = mClientSocket.getOutputStream();
+			mDOutStream = new DataOutputStream(mRawOutStream);
 			mOutputStream = new PrintWriter(
 					mRawOutStream, true);
 			//mByteOutStream = new ByteArrayOutputStream();
@@ -149,6 +151,7 @@ public class WEEUpD implements Runnable {
 				if(!doShit()) {
 					log("run() - doShit FAILED");
 					log("Stopping run...");
+					resetClient();
 					return;
 				}
 				/*if(!sendMenu()) {
@@ -448,9 +451,9 @@ public class WEEUpD implements Runnable {
 			log("Encoded Server Public Key:\n" + toHexString(pubKeyEnc));
 
 			//Send Encoded Public Key to Client
-			send("[PUBKEY]\n" + pubKeyEnc.length);
+			//send("[PUBKEY]\n" + pubKeyEnc.length);
 			sendBytes(pubKeyEnc);
-			log("Send Public Key to Client");
+			log("Sent Public Key to Client");
 
 			//Get Client Public Key
 			//FORMAT:
@@ -460,15 +463,16 @@ public class WEEUpD implements Runnable {
 			//[END]
 			log("Waiting on Client Response");
 			receive();
-			if(!sStringBuffer.contains("[RECEIVED]")
-			|| !sStringBuffer.contains("[PUBKEY]"))
+			if(!sStringBuffer.contains("[RECEIVED]"))
+			//|| !sStringBuffer.contains("[PUBKEY]"))
 				throw new Exception("Error Sending Public Key Bytes to Client");
-			log("Received Client Response:\n" + sStringBuffer.split("\n")[2]);
+			log("Received Client Response:\n" + sStringBuffer);
 
 			//Parse Client Public Key
-			int length = new Integer(sStringBuffer.split("\n")[1]).intValue();
-			byte[] clientPubKeyBytes = receiveBytes(length);
-			log("Parsed Encoded Client Public Key:\n" + toHexString(clientPubKeyBytes));
+			//int length = new Integer(sStringBuffer.split("\n")[1]).intValue();
+			//byte[] clientPubKeyBytes = receiveBytes(length);
+			byte[] clientPubKeyBytes = receiveBytes();
+			log("Received Encoded Client Public Key:\n" + toHexString(clientPubKeyBytes));
 
 			//Instantiate Client Public Key
 			KeyFactory kFac = KeyFactory.getInstance("DiffieHellman");
@@ -663,21 +667,18 @@ public class WEEUpD implements Runnable {
 		log("send() START");
 		s += "\n[END]";
 		try {
+			//If this is a secure transmission...
 			if(bEncrypt) {
+				//Encrypt it...
 				byte[] b = encrypt(s);
-				log("Sending Notification");
-				mOutputStream.println("[ENCODED]\n" + b.length + "\n[END]");
-				log("Sending Encoded Message Of " + b.length + " Bytes");
-				sendBytes(b);
-				log("Waiting on client confirmation...");
-				receive();
-				if(!sStringBuffer.contains("[RECEIVED]"))
-					throw new Exception("Encrypted Transmission Error");
+				//And send the bytes...
+				if(sendBytes(b) == null) return false;
 				log("Successfully Sent Encrypted Message");
 				return true;
 			}
+			//Otherwise, proceed normally
 			log("Sending String to Client:\n" + s + "|Fin.");
-				mOutputStream.println(s);
+			mOutputStream.println(s);
 		} catch(Exception e) {
 			log("Error while sending string to client");
 			e.printStackTrace();
@@ -689,30 +690,25 @@ public class WEEUpD implements Runnable {
 	}
 
 	private boolean sendBytes(byte[] b) {
+		if(b == null) return null;
 		log("sendBytes() START");
 		try {
-			//Verify Our Output Stream
-			if(mRawOutStream == null)
-				mRawOutStream = mClientSocket.getOutputStream();
-			//if(mByteOutStream == null)
-			//	mByteOutStream = (ByteArrayOutputStream) mClientSocket.getOutputStream();
-			log("Verified Output Streams");
-
 			log("Sending " + b.length + " bytes to client:\n" + toHexString(b));
+			mDOutStream.writeInt(b.length);
 			mRawOutStream.write(b);
-			mRawOutStream.flush();
-			log("Flushed Output Stream");
 		} catch(Exception e) {
 			log("Error Sending Bytes to Client");
 			e.printStackTrace();
 			resetClient();
 			return false;
-		} //END try/catch
+		} //END Try/Catch
 		log("sendBytes() DONE");
 		return true;
 	} //END sendBytes()
 
 	private byte[] encrypt(String plain) {
+		if(plain == null)
+			return null;
 		log("encrypt() START");
 		byte[] cipher;
 		try {
@@ -722,7 +718,7 @@ public class WEEUpD implements Runnable {
 			e.printStackTrace();
 			resetClient();
 			return null;
-		} //END try/catch
+		} //END Try/Catch
 		log("encrypt() DONE");
 		return cipher;
 	} //END encrypt()
@@ -732,6 +728,14 @@ public class WEEUpD implements Runnable {
 		//Clear buffers
 		sLineBuffer = sStringBuffer = "";
 		try {
+			//If a secure transmission
+			if(bEncrypt) {
+				sStringBuffer = decrypt(receiveBytes());
+				if(sStringBuffer == null)
+					throw new Exception("Null Client Input");
+			}
+			//Otherwise ..
+			else
 			//As long as haven't gotten the end notification...
 			while(!sLineBuffer.equals("[END]")) {
 				//...keep pulling data
@@ -749,72 +753,60 @@ public class WEEUpD implements Runnable {
 					if(sLineBuffer.equals("[QUIT]")) {
 						log("Received Quit String");
 						resetClient();
+						return null;
 					} else if(!sLineBuffer.equals("[END]"))
 						sStringBuffer += sLineBuffer + "\n";
 					//END if/else if
 				} //END if/else
-			} //END while
+			} //END While ![END]
+			//END If/Else (Encrypted)
 
-			//If a secure transmission...
-			if(bEncrypt) {
-				//Make sure we're receiving a secure transmission
-				if(!sStringBuffer.contains("[ENCODED]"))
-					throw new Exception("Insecure Transmission!");
-				//Check length of transmission
-				int length = new Integer(sStringBuffer.split("\n")[1]).intValue();
-				//Receive & Decrypt Transmission
-				sStringBuffer = decrypt(receiveBytes(length));
-				log("Received Encrypted Message:\n" + sStringBuffer);
-			} //END if Encrypted
+			//If we received the quit string
+			if(sStringBuffer.contains("[QUIT]")) {
+				//It would be a good idea to quit
+				log("Received Quit String");
+				resetClient();
+				return null;
+			} //END If [QUIT]
 		} catch(Exception e) {
 			log("Error while receiving input from client");
 			e.printStackTrace();
 			resetClient();
 			return null;
-		} //END try/catch
+		} //END Try/Catch
 		log("receive() DONE");
 		return sStringBuffer;
 	} //END receive()
 
-	public byte[] receiveBytes(int n) {
+	public byte[] receiveBytes() {
 		log("receiveBytes() START");
-		//Initialize Return Value & Byte Buffer
-		byte[] retVal = new byte[n];
+		byte[] retVal = null;
 		int b;
-		log("Initialized retVal[" + retVal.length + "]");
 		try {
-			//Make sure we have a valid input stream
-			if(mRawInStream == null)
-				mRawInStream = mClientSocket.getInputStream();
-			log("Verified Input Stream");
-
-			//Loop through the length of our available buffer (1024 bytes)
-			log("Reading Bytes From Client Socket");
-			for(int i = 0; i < retVal.length; i++) {
-				b = mRawInStream.read();
-				if(b != -1) retVal[i] = (byte)b;
-				else throw new Exception("Too few bytes, read " + i + " bytes");
-			} //END for
-			//If any bytes are still remaining...
-			if((b = mRawInStream.available()) > 0)
-				//...then something fucked up
-				throw new Exception("Too many bytes, " + b + " bytes remaining");
-			//Otherwise, we're good
-			log("Received " + retVal.length + " Bytes:\n" + toHexString(retVal));
-		} catch (Exception e) {
-			log("Error while receiving bytes from client");
+			int l = mDInStream.readInt();
+			retVal = new byte[l];
+			log("Initialized retVal[" + l + "]");
+			log("Reading " + l + " bytes from socket");
+			if(l > 0)
+				mDInStream.readFully(retVal);
+			//if((b = mRawInStream.available()) > 0)
+			//	throw new Exception("Too Many Bytes, " + b + " remaining");
+			log("Received Bytes:\n" + toHexString(retVal));
+		} catch(Exception e) {
+			/*log("Error Receiving Bytes From Client");
 			e.printStackTrace();
-			resetClient();
+			resetClient();*/
 			return null;
-		} //END try/catch
+		} //END Try/Catch
 		log("receiveBytes() DONE");
 		return retVal;
 	} //END receiveBytes()
 
 	private String decrypt(byte[] cipher) {
+		if(cipher == null)
+			return null;
 		log("decrypt() START");
 		String plain = null;
-		log("Initialized Return Value");
 		try {
 			//Decrypt & Convert to String
 			plain = new String(mDCipher.doFinal(cipher));
@@ -823,7 +815,7 @@ public class WEEUpD implements Runnable {
 			e.printStackTrace();
 			resetClient();
 			return null;
-		} //END try/catch
+		} //END Try/Catch
 		log("decrypt() DONE");
 		return plain;
 	} //END decrypt()
@@ -833,19 +825,24 @@ public class WEEUpD implements Runnable {
 		//Close all streams & reset to initial state
 		try {
 			mOutputStream.close();
+			mDOutStream.close();
+			mRawOutStream.close();
 			log("Closed Output Stream");
 
 			mInputStream.close();
+			mDInStream.close();
+			mRawInStream.close();
 			log("Closed Input Stream");
 
 			mClientSocket.close();
 			log("Closed Client Socket");
 
+			sLineBuffer = sStringBuffer = null;
 			mState = State.START;
 			bEncrypt = false;
 		} catch(Exception e) {
 			errorOut("ERROR: " + e, e);
-		} //END try/catch
+		} //END Try/Catch
 		log("resetClient() DONE");
 		return false;
 	} //END resetClient()
