@@ -31,7 +31,7 @@ public class WEEUp {
 	private String		sHostName;
 	private String		sStringBuffer;
 	private String		sLineBuffer;
-	private String		sVersion = "v0.1";
+	private String		sVersion = "v0.4a";
 
 	private Socket		mSocket;
 	private BufferedReader	mInputStream;
@@ -121,6 +121,10 @@ public class WEEUp {
 			log("Created Output Stream");
 			sStringBuffer = null;
 			bEncrypt = false;
+			log("Initializing Encryption");
+			if(!initEncryption())
+				throw new Exception("Encryption Initialization Failed");
+			log("Encryption Initialized");
 		} catch(Exception e) {
 			errorOut("ERROR: " + e, e);
 		}
@@ -280,12 +284,6 @@ public class WEEUp {
 				errorOut("Failed Login Attempt",
 					new Exception("Invalid Credentials"));
 		}
-		log("Initializing Encryption");
-		if(!initEncryption())
-			errorOut("Encryption Initialization Failed",
-				new Exception("Encryption Error"));
-		log("Encryption Initialized");
-		bEncrypt = true;
 		log("login() DONE");
 	}
 	
@@ -403,7 +401,6 @@ public class WEEUp {
 	} //END toHexString
 
 	public static String md5(String str) {
-		//log("md5() START");
 		// http://viralpatel.net/blogs/java-md5-hashing-salting-password/
 		String md5 = null;
 		if(null == str) return null;
@@ -414,7 +411,6 @@ public class WEEUp {
 		} catch(NoSuchAlgorithmException e) {
 			e.printStackTrace();
 		}
-		//log("md5() DONE");
 		return md5;
 	}
 		
@@ -422,6 +418,7 @@ public class WEEUp {
 	private void mainMenu() {
 		log("mainMenu() START");
 		try {
+			char choice = 'z';
 			boolean badInput = true;
 			while(badInput) {
 				System.out.print("Enter Your Choice (M/P/T/Q/H)\n: ");
@@ -429,14 +426,17 @@ public class WEEUp {
 				if(sLineBuffer == null) {
 					log("NULL Input Received");
 					System.out.println("Please make a valid selection");
-				} else
+					continue;
+				} else {
 					sLineBuffer = sLineBuffer.trim().toLowerCase();
-				if(sLineBuffer.equals("q")) {
+					choice = sLineBuffer.charAt(0);	
+				} //END If/Else Input NULL
+
+				if(choice == 'q')
 					quit();
-				} else if(sLineBuffer.equals("h")) {
+				else if(choice == 'h')
 					help();
-				} else if(sLineBuffer.equals("m") || sLineBuffer.equals("p")
-					|| sLineBuffer.equals("t") || sLineBuffer.equals("u")) {
+				else if(choice == 'm' || choice == 'p' || choice == 't' || choice == 'u') {
 					badInput = false;
 					if(sLineBuffer.equals("m"))
 						send("[MAIN]");
@@ -447,23 +447,86 @@ public class WEEUp {
 					else if(sLineBuffer.equals("u"))
 						send("[UNKNOWN]");
 					else
-						errorOut("Unknown Selection: " + sLineBuffer,
-							new Exception("Invalid Input"));
-				} //END if/else
-			} //END while
+						throw new Exception("Unknown Selection: " + sLineBuffer);
+				} else {
+					System.out.println("Sorry, invalid input.\n"
+					+ "Please try: (M)ain Menu, (P)rofile, (T)ransfer, (U)nknown, "
+					+ "(H)elp or (Q)uit");
+				}//END If/Else Choice
+			} //END While (Bad Input)
 		} catch(Exception e) {
 			errorOut("ERROR: " + e, e);
-		} //END try/catch
+		} //END Try/Catch
 		log("mainMenu() DONE");
 	} //END mainMenu()
 
 	private void profile() {
 		log("profile() START");
+		try {
+			char choice = 'z';
+			boolean badInput = true;
+			while(badInput) {
+				System.out.print("Enter Your Choice (M/H/Q)\n: ");
+				sLineBuffer = mConsole.readLine();
+				if(sLineBuffer == null) {
+					log("NULL Input Received");
+					System.out.println("Please make a valid selection");
+					continue;
+				} else {
+					sLineBuffer = sLineBuffer.trim().toLowerCase();
+					choice = sLineBuffer.charAt(0);
+				} //END If/Else Input Null
+
+				if(choice == 'q')
+					quit();
+				else if(choice == 'h')
+					help();
+				else if(choice == 'm') {
+					badInput = false;
+					send("[MAIN]");
+				} else
+					System.out.println("Sorry, invalid selection.\n"
+					+ "Please try: (M)ain Menu, (H)elp or (Q)uit");
+				//END If/Else Choice
+			} //END While (Bad Input)
+		} catch(Exception e) {
+			errorOut("ERROR: " + e.toString(), e);
+		} //END Try/Catch
 		log("profile() DONE");
 	} //END profile
 
 	private void transfer() {
 		log("transfer() START");
+		try {
+			char choice = 'z';
+			boolean badInput = true;
+			while(badInput) {
+				System.out.print("Enter Your Choice (M/H/Q)\n: ");
+				sLineBuffer = mConsole.readLine();
+				if(sLineBuffer == null) {
+					log("NULL User Input");
+					System.out.println("Please make a valid selection");
+					continue;
+				} else {
+					sLineBuffer = sLineBuffer.trim().toLowerCase();
+					choice = sLineBuffer.charAt(0);
+				} //END If/Else Input NULL
+
+				if(choice == 'q')
+					quit();
+				else if(choice == 'h')
+					help();
+				else if(choice == 'm') {
+					badInput = false;
+					send("[MAIN]");
+				} else
+					System.out.println("Sorry, invalid selection.\n"
+					+ "Please try: (M)ain Menu, (H)elp or (Q)uit");
+				//END If/Else Choice
+			} //END While (Bad Input)
+		} catch(Exception e) {
+			errorOut("ERROR: " + e.toString(), e);
+		}
 		log("transfer() DONE");
 	}
 
@@ -478,7 +541,7 @@ public class WEEUp {
 				if(sStringBuffer == null)
 					throw new Exception("NULL Server Input");
 				sStringBuffer = sStringBuffer.trim();
-				log("Received:\n" + sStringBuffer);
+				//log("Received:\n" + sStringBuffer);
 				return sStringBuffer;
 			} //END if
 
@@ -487,11 +550,12 @@ public class WEEUp {
 				sLineBuffer = mInputStream.readLine();
 				if(sLineBuffer == null)
 					throw new Exception("NULL Server Input");
-				log("Received: " + sLineBuffer.trim());
+				//log("Received: " + sLineBuffer.trim());
 				sStringBuffer += sLineBuffer + "\n";
 			} //END While
+			log("Received: " + sStringBuffer);
 		} catch(Exception e) {
-			errorOut("Error: " + e, e);
+			errorOut("ERROR: " + e, e);
 		} //END Try/Catch
 		log("receive() DONE");
 		return sStringBuffer;
@@ -504,12 +568,8 @@ public class WEEUp {
 		try {
 			int l = mDInStream.readInt();
 			retVal = new byte[l];
-			log("Initialized retVal[" + l + "]");
-			log("Reading " + l + " Bytes From Input Stream");
 			if(l > 0)
 				mDInStream.readFully(retVal);
-			//if((b = mRawInStream.available()) > 0)
-			//	throw new Exception("Too Many Bytes, " + b + " remaining");
 			log("Received Bytes:\n" + toHexString(retVal));
 		} catch(Exception e) {
 			errorOut(e.toString(), e);
@@ -520,8 +580,6 @@ public class WEEUp {
 
 	private String decrypt(byte[] cipher) {
 		if(cipher == null) return null;
-		log("decrypt() START");
-		//Initialize Return Value
 		String plain = null;
 		try {
 			//Decrypt & Convert to String
@@ -529,7 +587,6 @@ public class WEEUp {
 		} catch(Exception e) {
 			errorOut(e.toString(), e);
 		} //END Try/Catch
-		log("decrypt() DONE");
 		return plain;
 	} //END Decrypt()
 
@@ -542,7 +599,7 @@ public class WEEUp {
 				byte[] c = encrypt(msg);
 				//& send
 				if(!sendBytes(c)) return false;
-				log("Successfully Sent Encrypted Message");
+				log("Successfully Sent Encrypted Message: " + msg);
 				return true;
 			} //END if
 
@@ -574,7 +631,6 @@ public class WEEUp {
 
 	private byte[] encrypt(String plain) {
 		if(plain == null) return null;
-		log("encrypt() START");
 		byte[] cipher = null;
 		try {
 			//Convert String to Bytes & Encrypt
@@ -582,7 +638,6 @@ public class WEEUp {
 		} catch(Exception e) {
 			errorOut(e.toString(), e);
 		} //END try/catch
-		log("encrypt() DONE");
 		return cipher;
 	} //END encrypt()
 

@@ -23,14 +23,14 @@ import javax.crypto.interfaces.*;
 public class WEEUpD implements Runnable {
 //***************************************************************
 // 			DATA MEMBERS
-	private enum State { START, CREATE, LOGIN, MAIN, PROFILE, TRANSFER };
+	private enum State { START, CREATE, LOGIN, MAIN, PROFILE, TRANSFER, UNKNOWN };
 
 	private int		nPort;
 	private int		nIP;
 	private String		sHostName;
 	private String		sLineBuffer;
 	private String		sStringBuffer;
-	private String		sVersion = "v0.1";
+	private String		sVersion = "v0.4a";
 
 	private ServerSocket	mServerSocket;
 	private Socket		mClientSocket;
@@ -48,7 +48,7 @@ public class WEEUpD implements Runnable {
 
 	private State		mState;
 
-	//Whether encryption has been initialized
+	//Encryption Members
 	private static boolean		bEncrypt = false; //Whether or not Encryption is Available
 	private static String		sCipher;	//Cipher Algorithm to Use for Encryption
 	private static Cipher		mECipher;	//Cipher Object for Encryption
@@ -122,7 +122,7 @@ public class WEEUpD implements Runnable {
 			mInputStream = null;
 			mOutputStream = null;
 			sStringBuffer = null;
-			mState = State.START; //LOGIN;
+			mState = State.START;
 		} catch(Exception e) {
 			errorOut("ERROR: " + e, e);
 		}
@@ -136,15 +136,20 @@ public class WEEUpD implements Runnable {
 			mDInStream = new DataInputStream(mRawInStream);
 			mInputStream = new BufferedReader(
 					new InputStreamReader(mRawInStream));
-			//mByteInStream = (ByteArrayInputStream) mRawInStream;
 			log("Created Input Stream");
 
 			mRawOutStream = mClientSocket.getOutputStream();
 			mDOutStream = new DataOutputStream(mRawOutStream);
 			mOutputStream = new PrintWriter(
 					mRawOutStream, true);
-			//mByteOutStream = new ByteArrayOutputStream();
 			log("Created Output Stream");
+
+			log("Initializing Encryption");
+			if(!initEncryption()) {
+				log("Error Initializing Encryption");
+				throw new Exception("Encryption Initialization Failed");
+			} else
+				log("Encryption Initialized");
 
 			log("Starting Listen Loop");
 			while (true) {
@@ -154,16 +159,6 @@ public class WEEUpD implements Runnable {
 					resetClient();
 					return;
 				}
-				/*if(!sendMenu()) {
-					log("run() - sendMenu FAILED");
-					log("Stopping run...");
-					return;
-				}
-				if(!processInput()) {
-					log("run() - processInput FAILED");
-					log("Stopping run...");
-					return;
-				}*/
 			}
 		} catch(Exception e) {
 			errorOut("ERROR: " + e, e);
@@ -401,18 +396,8 @@ public class WEEUpD implements Runnable {
 		}
 		if(badLogins >= 3)
 			resetClient();
-		//else if(badLogins == -1) {
-		else {
+		else if(badLogins == -1)
 			send("[SUCCESS]");
-			log("Initializing Encryption");
-			if(!initEncryption()) {
-				log("Error Initializing Encryption");
-				return false;
-			} else {
-				log("Encryption Initialized");
-				bEncrypt = true;
-			}
-		}
 
 		log("login() DONE");
 		return true;
@@ -420,6 +405,7 @@ public class WEEUpD implements Runnable {
 
 	//Adapted from Oracle documentation
 	//http://docs.oracle.com/javase/7/docs/technotes/guides/security/crypto/CryptoSpec.html#AppD
+	//TODO Make Configurable (Cipher, Key Length, Etc.)
 	private boolean initEncryption() {
 		log("initEncryption() START");
 		try {
@@ -451,26 +437,17 @@ public class WEEUpD implements Runnable {
 			log("Encoded Server Public Key:\n" + toHexString(pubKeyEnc));
 
 			//Send Encoded Public Key to Client
-			//send("[PUBKEY]\n" + pubKeyEnc.length);
 			sendBytes(pubKeyEnc);
 			log("Sent Public Key to Client");
 
-			//Get Client Public Key
-			//FORMAT:
-			//[PUBKEY]
-			//Public Key Length
-			//[RECEIVED]
-			//[END]
+			//Get Client Confirmation
 			log("Waiting on Client Response");
 			receive();
 			if(!sStringBuffer.contains("[RECEIVED]"))
-			//|| !sStringBuffer.contains("[PUBKEY]"))
 				throw new Exception("Error Sending Public Key Bytes to Client");
 			log("Received Client Response:\n" + sStringBuffer);
 
-			//Parse Client Public Key
-			//int length = new Integer(sStringBuffer.split("\n")[1]).intValue();
-			//byte[] clientPubKeyBytes = receiveBytes(length);
+			//Receive & Parse Client Public Key
 			byte[] clientPubKeyBytes = receiveBytes();
 			log("Received Encoded Client Public Key:\n" + toHexString(clientPubKeyBytes));
 
@@ -514,8 +491,6 @@ public class WEEUpD implements Runnable {
 			//Prep the KeyAgreement Object for Secret Key Generation
 			kAgree.doPhase(mClientKey, true);
 
-			//Cipher mECipher;
-			//Cipher mDCipher;
 			//Generate Secret Key & Cipher Object
 			mKey = kAgree.generateSecret(sCipher);
 			mECipher = Cipher.getInstance(sCipher);
@@ -547,7 +522,6 @@ public class WEEUpD implements Runnable {
 	}
 
 	private String toHexString(byte[] b) {
-		log("toHexString() START");
 		StringBuffer sBuff = new StringBuffer();
 		int length = b.length;
 		char[] hexChars = { '0', '1', '2', '3', '4', '5', '6', '7',
@@ -558,7 +532,6 @@ public class WEEUpD implements Runnable {
 			sBuff.append(hexChars[high]);
 			sBuff.append(hexChars[low]);
 		}
-		log("toHexString() DONE");
 		return sBuff.toString();
 	}
 
@@ -567,20 +540,55 @@ public class WEEUpD implements Runnable {
 		String input = receive();
 		if(input == null)
 			return false;
-		input = input.trim().toLowerCase();
+		input = input.trim();
 		System.out.println("(CLIENT): " + input);
+		if(input.equals("[MAIN]")) {
+			//Do Nothing, You're Already There
+		} else if(input.equals("[PROFILE]")) {
+			mState = State.PROFILE;
+		} else if(input.equals("[TRANSFER]")) {
+			mState = State.TRANSFER;
+		} else {
+			mState = State.UNKNOWN;
+		}
 		log("mainMenu() DONE");
 		return true;
 	}
 
 	private boolean profile() {
 		log("profile() START");
+		String input = receive();
+		if(input == null)
+			return false;
+		input = input.trim();
+		System.out.println("(CLIENT): " + input);
+		if(input.equals("[MAIN]"))
+			mState = State.MAIN;
+		else if(input.equals("[PROFILE]"))
+			; //Do Nothing. You're there already
+		else if(input.equals("[TRANSFER]"))
+			mState = State.TRANSFER;
+		else
+			mState = State.UNKNOWN;
 		log("profile() DONE");
 		return true;
 	}
 
 	private boolean transfer() {
 		log("transfer() START");
+		String input = receive();
+		if(input == null)
+			return false;
+		input = input.trim();
+		System.out.println("(CLIENT): " + input);
+		if(input.equals("[MAIN]"))
+			mState = State.MAIN;
+		else if(input.equals("[PROFILE]"))
+			mState = State.PROFILE;
+		else if(input.equals("[TRANSFER]"))
+			; //Do Nothing. You're there already
+		else
+			mState = State.UNKNOWN;
 		log("transfer() DONE");
 		return true;
 	}
@@ -665,18 +673,18 @@ public class WEEUpD implements Runnable {
 
 	private boolean send(String s) {
 		log("send() START");
-		s += "\n[END]";
 		try {
 			//If this is a secure transmission...
 			if(bEncrypt) {
 				//Encrypt it...
 				byte[] b = encrypt(s);
 				//And send the bytes...
-				if(sendBytes(b) == null) return false;
-				log("Successfully Sent Encrypted Message");
+				if(sendBytes(b) == false) return false;
+				log("Successfully Sent Encrypted Message: " + s);
 				return true;
 			}
 			//Otherwise, proceed normally
+			s += "\n[END]";
 			log("Sending String to Client:\n" + s + "|Fin.");
 			mOutputStream.println(s);
 		} catch(Exception e) {
@@ -690,7 +698,7 @@ public class WEEUpD implements Runnable {
 	}
 
 	private boolean sendBytes(byte[] b) {
-		if(b == null) return null;
+		if(b == null) return false;
 		log("sendBytes() START");
 		try {
 			log("Sending " + b.length + " bytes to client:\n" + toHexString(b));
@@ -709,7 +717,6 @@ public class WEEUpD implements Runnable {
 	private byte[] encrypt(String plain) {
 		if(plain == null)
 			return null;
-		log("encrypt() START");
 		byte[] cipher;
 		try {
 			cipher = mECipher.doFinal(plain.getBytes());
@@ -719,7 +726,6 @@ public class WEEUpD implements Runnable {
 			resetClient();
 			return null;
 		} //END Try/Catch
-		log("encrypt() DONE");
 		return cipher;
 	} //END encrypt()
 
@@ -733,6 +739,8 @@ public class WEEUpD implements Runnable {
 				sStringBuffer = decrypt(receiveBytes());
 				if(sStringBuffer == null)
 					throw new Exception("Null Client Input");
+				else
+					log("Received: " + sStringBuffer);
 			}
 			//Otherwise ..
 			else
@@ -756,8 +764,8 @@ public class WEEUpD implements Runnable {
 						return null;
 					} else if(!sLineBuffer.equals("[END]"))
 						sStringBuffer += sLineBuffer + "\n";
-					//END if/else if
-				} //END if/else
+					//END If/Else QUIT
+				} //END If/Else NULL
 			} //END While ![END]
 			//END If/Else (Encrypted)
 
@@ -805,7 +813,6 @@ public class WEEUpD implements Runnable {
 	private String decrypt(byte[] cipher) {
 		if(cipher == null)
 			return null;
-		log("decrypt() START");
 		String plain = null;
 		try {
 			//Decrypt & Convert to String
@@ -816,7 +823,6 @@ public class WEEUpD implements Runnable {
 			resetClient();
 			return null;
 		} //END Try/Catch
-		log("decrypt() DONE");
 		return plain;
 	} //END decrypt()
 
