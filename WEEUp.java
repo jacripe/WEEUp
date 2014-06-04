@@ -175,9 +175,10 @@ public class WEEUp {
 			if(sLineBuffer == null)
 				errorOut("Received NULL Input",
 					new Exception("Null User Input"));
-			sLineBuffer = sLineBuffer.trim().toLowerCase();
+			char choice = sLineBuffer.trim().toLowerCase().charAt(0);
 			log("Received User Input: " + sLineBuffer);
-			if(!sLineBuffer.equals("c") && !sLineBuffer.equals("l")) {
+			//if(!sLineBuffer.equals("c") && !sLineBuffer.equals("l")) {
+			if(choice != 'c' && choice != 'l') {
 				System.out.println("Invalid Input!\nPlease try \"C\" or \"L\"...\n");
 				failed = true;
 			} else {
@@ -206,20 +207,19 @@ public class WEEUp {
 			if(!sStringBuffer.contains("[RECEIVED]")) {
 				System.out.println("Bad Username. Plese try again...");
 				continue;
-			}
+			} //END If Not RECEIVED
+			//TODO Use char array instead of string for password/hash
 			System.out.print("Enter New Password: ");
 			String pass = new String(mConsole.readPassword());
-			if(pass == null)
-				errorOut("Received NULL Input",
-					new Exception("Null User Input"));
+			//char[] pass = mConsole.readPassword();
+			if(pass == null) {
+				//errorOut("Received NULL Input",
+				//	new Exception("Null User Input"));
+				System.out.println("Please enter a valid password");
+				continue;
+			} //END If Pass NULL
 			String hash = md5(pass + ":" + user);
 			log("Received Hash: " + hash);
-			/*send(hash);
-			receive();
-			log("Received Server Response: " + sStringBuffer);
-			if(!sStringBuffer.contains("[RECEIVED]"))
-				errorOut("Unknown Server Response",
-					new Exception("Unknown Server Response"));*/
 			System.out.print("Re-enter Password: ");
 			pass = new String(mConsole.readPassword());
 			if(pass == null)
@@ -232,7 +232,7 @@ public class WEEUp {
 				send("[FAILED]");
 				failed = true;
 				continue;
-			}
+			} //END If Hash1 != Hash2
 			send(hash2);
 			receive();
 			log("Received Server Response: " + sStringBuffer);
@@ -244,10 +244,10 @@ public class WEEUp {
 			} else {
 				System.out.println("Error! Account Creation Failed.\nPlease try again");
 				failed = true;
-			} //END if/else
+			} //END If/Else SUCCESS
 		} //END while
 		log("create() DONE");
-	}
+	} //END create()
 
 	private void login() {
 		log("login() START");
@@ -400,6 +400,11 @@ public class WEEUp {
 		return sBuff.toString();
 	} //END toHexString
 
+	public static String md5(char[] p) {
+		String md5 = null;
+		return md5;
+	}
+
 	public static String md5(String str) {
 		// http://viralpatel.net/blogs/java-md5-hashing-salting-password/
 		String md5 = null;
@@ -447,7 +452,8 @@ public class WEEUp {
 					else if(sLineBuffer.equals("u"))
 						send("[UNKNOWN]");
 					else
-						throw new Exception("Unknown Selection: " + sLineBuffer);
+						throw new Exception("Unknown Selection: (" 
+								   + choice + ") " +sLineBuffer);
 				} else {
 					System.out.println("Sorry, invalid input.\n"
 					+ "Please try: (M)ain Menu, (P)rofile, (T)ransfer, (U)nknown, "
