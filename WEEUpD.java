@@ -74,13 +74,14 @@ public class WEEUpD implements Runnable {
 		log("Starting Main Loop");
 		while(true) {
 			d.listenSocket();
-		}
-		//log("Finished Main Loop");
-		//log("WEEUpD Done");
-	}
+		} //END Main Loop
+	} //END main(ARGS)
 
 //****************************************************************
 // 			FUNCTIONS
+//-----------------
+//	CONSTUCTORS
+
 	WEEUpD() {
 		log("new WEEUpD()");
 		nPort = 4321;
@@ -113,65 +114,12 @@ public class WEEUpD implements Runnable {
 		}
 	}
 
-	public void createSocket() {
-		log("createSocket() START");
-		try {
-			mServerSocket = new ServerSocket(nPort);
-			log("Created Server Socket");
-			mClientSocket = null;
-			mInputStream = null;
-			mOutputStream = null;
-			sStringBuffer = null;
-			mState = State.START;
-		} catch(Exception e) {
-			errorOut("ERROR: " + e, e);
-		}
-		log("createSocket() DONE");
-	}
-
-	public void run() {
-		log("run() START");
-		try {
-			mRawInStream = mClientSocket.getInputStream();
-			mDInStream = new DataInputStream(mRawInStream);
-			mInputStream = new BufferedReader(
-					new InputStreamReader(mRawInStream));
-			log("Created Input Stream");
-
-			mRawOutStream = mClientSocket.getOutputStream();
-			mDOutStream = new DataOutputStream(mRawOutStream);
-			mOutputStream = new PrintWriter(
-					mRawOutStream, true);
-			log("Created Output Stream");
-
-			log("Initializing Encryption");
-			if(!initEncryption()) {
-				log("Error Initializing Encryption");
-				throw new Exception("Encryption Initialization Failed");
-			} else
-				log("Encryption Initialized");
-
-			log("Starting Listen Loop");
-			while (true) {
-				if(!doShit()) {
-					log("run() - doShit FAILED");
-					log("Stopping run...");
-					resetClient();
-					return;
-				}
-			}
-		} catch(Exception e) {
-			errorOut("ERROR: " + e, e);
-		}
-
-		log("run() DONE");
-	}
-	
+//----------------
+//	Initilizer
 	public static WEEUpD parseArgs(String[] a)  {
-		log("parseArgs() START");
-		System.out.println("ARGS:");
-		for(String s: a)
-			System.out.println("\t" + s);
+		String msg = "Parsing Arguments:";
+		for(String s: a) msg += "\t" + s;
+		log(msg);
 
 		try {
 			switch(a.length) {
@@ -184,17 +132,71 @@ public class WEEUpD implements Runnable {
 				log("Too many arguments. Using default constructor");
 				printUsage();
 				return new WEEUpD();
-			}
+			} //END Switch A Length
+		} catch(Exception e) {
+			errorOut("ERROR: " + e, e);
+		} //END Try/Catch
+		log("Missed the switch statement. Using default constructor");
+		return new WEEUpD();
+	} //END parseArgs(String[])
+
+	public void createSocket() {
+		try {
+			mServerSocket = new ServerSocket(nPort);
+			log("Created Server Socket");
+			mClientSocket = null;
+			mInputStream = null;
+			mOutputStream = null;
+			sStringBuffer = null;
+			log("Initialized Streams to NULL");
+			mState = State.START;
+			log("Initialized State to START");
 		} catch(Exception e) {
 			errorOut("ERROR: " + e, e);
 		}
-
-		log("Missed the switch statement. Using default constructor");
-		return new WEEUpD();
 	}
 
+//----------------
+//	Thread Run
+	public void run() {
+		log("Starting Run...");
+		try {
+			mRawInStream = mClientSocket.getInputStream();
+			mDInStream = new DataInputStream(mRawInStream);
+			mInputStream = new BufferedReader(
+					new InputStreamReader(mRawInStream));
+			log("Created Input Streams");
+
+			mRawOutStream = mClientSocket.getOutputStream();
+			mDOutStream = new DataOutputStream(mRawOutStream);
+			mOutputStream = new PrintWriter(
+					mRawOutStream, true);
+			log("Created Output Streams");
+
+			log("Initializing Encryption");
+			if(!initEncryption()) {
+				log("Error Initializing Encryption");
+				throw new Exception("Encryption Initialization Failed");
+			} else
+				log("Encryption Initialized");
+			//END If/Else Initialize Encryption FAILED
+
+			log("Starting Listen Loop");
+			while (true) {
+				if(!doShit()) {
+					log("run() - doShit FAILED");
+					log("Stopping run...");
+					resetClient();
+					return;
+				} //END If doShit FAILED
+			} //END While True
+		} catch(Exception e) {
+			errorOut("ERROR: " + e, e);
+		} //END Try/Catch
+	} //END run()
+
 	public void listenSocket() {
-		log("listenSocket() START");
+		log("Waiting on client connection...");
 		try {
 			mClientSocket = mServerSocket.accept();
 			log("Created New Client Socket");
@@ -202,16 +204,21 @@ public class WEEUpD implements Runnable {
 			t.run();
 		} catch(Exception e) {
 			errorOut("ERROR: " + e, e);
-		}
+		} //END Try/Catch
+	} //END listenSocket()
 
-		log("listenSocket() DONE");
-	}
-
+//------------------
+//	Misc Members
 	public boolean doShit() {
-		log("doShit() START");
+		log("Time to do something...");
+		//Send Menu to Client
 		boolean success = sendMenu();
+		//If there was a problem...
 		if(!success)
+			//...start over
 			return false;
+		//END If NOT Success
+		//Otherwise, run the appropriate function
 		switch(mState) {
 		case START:
 			success = start();
@@ -235,18 +242,21 @@ public class WEEUpD implements Runnable {
 			errorOut("UNKNOWN STATE",
 				new Exception("Uknown State"));
 			success = false;
-		}
+		} //END Switch STATE
+		//If there was a problem...
 		if(!success)
+			//...we should start over
 			return false;
-		return true; //processInput();
-	}
+		//Otherwise, we're good
+		return true;
+	} //END doShit()
 
-	// TODO This method should really not be using sStringBuffer
 	public boolean sendMenu() {
-		log("sendMenu() START");
+		log("Sending menu to client...");
 		String s = "";
 		switch(mState) {
 		case START:
+			log("Start Menu");
 			s = "WEEUpD " + sVersion + "\n"
 			+ "(K) 2014 J. A. Cripe <wiseeyesent.com>\n"
 			+ "\nWhat would you like to do?\n"
@@ -255,72 +265,82 @@ public class WEEUpD implements Runnable {
 			+ "[START]";
 			break;
 		case CREATE:
+			log("Create Menu");
 			s = "Please enter your user name and password (twice)\n"
 			+ "[CREATE]";
 			break;
 		case LOGIN:
+			log("Login Menu");
 			s = "Please sign in...\n"
 			+ "[LOGIN]";
 			break;
 		case MAIN:
+			log("Main Menu");
 			s = "\tWEEUpD " + sVersion + "\n"
 			+ "M) Main Menu\n"
 			+ "P) User Profile\n"
 			+ "T) File Transfer\n"
-			+ "U) Unknown State\n"
 			+ "Q) Quit\n"
 			+ "H) Help\n"
-			+ "Please enter your choice (M/P/T/U/Q/H)\n"
+			+ "Please enter your choice (M/P/T/Q/H)\n"
 			+ "[MAIN]";
 			break;
 		case PROFILE:
+			log("Profile Menu");
 			s = "\tUser Profile\n"
 			+ "[PROFILE]";
 			break;
 		case TRANSFER:
+			log("Transfer Menu");
 			s = "\tFile Transfer\n"
 			+ "[TRANSFER]";
 			break;
 		default:
+			log("Unknown State");
 			s = "WARNING! Unknown State!\n"
 			+ "[UNKNOWN]";
 			break;
-		}
+		} //END Switch STATE
 		if(!send(s))
 			return false;
-		log("sendMenu() DONE");
+		//END If Send FAILED
 		return true;
-	}
+	} //END sendMenu()
 
 	private boolean start() {
-		log("start() START");
+		log("Do they want to create a user or login?");
+		//Get User Input
 		String input = receive();
+		//If we received NULL input...
 		if(input == null) {
+			//...start over
 			log("Received NULL from User");
 			resetClient();
 			return false;
-		} //END if
-		input = input.trim().toLowerCase();
-		if(input.equals("c")) {
+		} //END If Input NULL
+		//Otherwise, process the input...
+		if(input.equals("[CREATE]")) {
 			log("Received CREATE request...");
 			mState = State.CREATE;
 			return true;
-		} else if(input.equals("l")) {
+		} else if(input.equals("[LOGIN]")) {
 			log("Received LOGIN request...");
 			mState = State.LOGIN;
 			return true;
 		} else
 			log("Received Invalid User Input");
-		//END if/else
-		log("start() DONE");
+		//END If/Else Input
 		return false;
-	}
+	} //END start()
 
 	private boolean create() {
-		log("create() START");
+		log("Creating a new user...");
 		boolean failed = true;
+		//While we haven't succeeded...
 		while(failed) {
+			//...get user name
 			String user = receive();
+			//...check for null
 			if(user == null) {
 				log("Received NULL User");
 				resetClient();
@@ -329,14 +349,17 @@ public class WEEUpD implements Runnable {
 				log("Client failed user name selection");
 				failed = true;
 				continue;
-			} //END if
+			} //END If/Else User NULL/FAILED
 			user = user.trim().toLowerCase();
 			if(!userAvail(user)) {
 				send("Invalid Username\n[FAILED]");
 				return true;
-			}
+			} //END If User NOT Avail
+			//...notify client
 			send("[RECEIVED]");
+			//...get password hash
 			String hash = receive();
+			//...check for null/failed
 			if(hash == null) {
 				log("Received NULL Hash");
 				resetClient();
@@ -344,72 +367,79 @@ public class WEEUpD implements Runnable {
 			} else if(hash.contains("[FAILED]")) {
 				log("Client failed password entry");
 				failed = true;
-				continue;				
-			} //END if
-			// TODO Write User/Hash to passwd
+				continue;
+			} //END If/Else Hash NULL/FALIED
+			//...write user:hash to passwd file
 			try {
+				log("Writing " + user + ":" + hash + " to passwd...");
 				FileWriter passwdOut = new FileWriter("passwd", true);
-				passwdOut.write(user + ":" + hash);
+				passwdOut.write(user + ":" + hash + "\n");
 				passwdOut.flush();
 				passwdOut.close();
+				log("DONE");
 			} catch(Exception e) {
 				errorOut("Error writing to passwd", e);
 				resetClient();
 				return false;
-			}
+			} //END Try/Catch
+			//...notify client
 			send("[SUCCESS]");
-			mState = State.START;
+			mState = State.LOGIN;
 			failed = false;
-		}
-		log("create() DONE");
+		} //END While Failed
 		return true;
-	}
+	} //END create()
 	
 	private boolean login() {
-		log("login() START");
-
+		log("Starting Login...");
 		//TODO Change this to a configurable variable later
 		int badLogins = 0;
+		//While we still have attempts & haven't succeeded
 		while(badLogins < 3 && badLogins >= 0) {
+			//...get user name
 			String user = receive();
 			if(user == null) {
 				log("Received NULL User");
 				resetClient();
 				return false;
-			}
+			} //END If User NULL
 			user = user.trim().toLowerCase();
+			//...notify client
 			send("[RECEIVED]");
+			//...get password hash
 			String hash = receive();
 			if(hash == null) {
 				log("Received NULL Hash");
 				resetClient();
 				return false;
-			}
+			} //END If Hash NULL
 			hash = hash.trim();
+			//..check for valid credentials
 			if(!verifyLogin(user, hash)) {
 				badLogins++;
 				send("[FAILED]");
 			} else {
 				mState = State.MAIN;
 				badLogins = -1;
-			}
-		}
+			} //END If/Else Failed Verify Login
+		} //END While Bad Logins
+		//If we used up our attempts, start over
 		if(badLogins >= 3)
 			resetClient();
+		//Otherwise, we're good
 		else if(badLogins == -1)
 			send("[SUCCESS]");
-
-		log("login() DONE");
+		//END If/Else Bad Logins >3/-1
 		return true;
-	}
+	} //END login()
 
 	//Adapted from Oracle documentation
 	//http://docs.oracle.com/javase/7/docs/technotes/guides/security/crypto/CryptoSpec.html#AppD
-	//TODO Make Configurable (Cipher, Key Length, Etc.)
+	//TODO Make Configurable (SKIP/Generated Parms, Cipher, Key Length, Etc.)
 	private boolean initEncryption() {
-		log("initEncryption() START");
+		log("Initializing Encryption");
 		try {
-			/* GENERATE PARAMETERS
+			/* TODO GENERATE PARAMETERS
  			AlgorithmParameterGenerator aPGen =
 				AlgorithmParameterGenerator.getInstance("DiffieHellman");
 			aPGen.init(1024);
@@ -516,10 +546,9 @@ public class WEEUpD implements Runnable {
 			e.printStackTrace();
 			resetClient();
 			return false;
-		}
-		log("initEncryption() DONE");
+		} //END Try/Catch
 		return true;
-	}
+	} //END initEncryption()
 
 	private String toHexString(byte[] b) {
 		StringBuffer sBuff = new StringBuffer();
@@ -536,7 +565,8 @@ public class WEEUpD implements Runnable {
 	}
 
 	private boolean mainMenu() {
-		log("mainMenu() START");
+		log("Starting Main Menu...");
+		//Get User Input & Check for NULL
 		String input = receive();
 		if(input == null)
 			return false;
@@ -549,19 +579,21 @@ public class WEEUpD implements Runnable {
 		} else if(input.equals("[TRANSFER]")) {
 			mState = State.TRANSFER;
 		} else {
-			mState = State.UNKNOWN;
-		}
-		log("mainMenu() DONE");
+			//mState = State.UNKNOWN;
+			log("Unknown Input Received: " + input);
+		} //END If/Else Input
 		return true;
-	}
+	} //END mainMenu()
 
 	private boolean profile() {
-		log("profile() START");
+		log("Starting User Profile...");
+		//Get User Input & Check For NULL
 		String input = receive();
 		if(input == null)
 			return false;
 		input = input.trim();
 		System.out.println("(CLIENT): " + input);
+		//Process It...
 		if(input.equals("[MAIN]"))
 			mState = State.MAIN;
 		else if(input.equals("[PROFILE]"))
@@ -570,17 +602,19 @@ public class WEEUpD implements Runnable {
 			mState = State.TRANSFER;
 		else
 			mState = State.UNKNOWN;
-		log("profile() DONE");
+		//END If/Else Input
 		return true;
-	}
+	} //END profile()
 
 	private boolean transfer() {
-		log("transfer() START");
+		log("Starting File Transfer...");
+		//Get User Input & Check For NULL
 		String input = receive();
 		if(input == null)
 			return false;
 		input = input.trim();
 		System.out.println("(CLIENT): " + input);
+		//Process It...
 		if(input.equals("[MAIN]"))
 			mState = State.MAIN;
 		else if(input.equals("[PROFILE]"))
@@ -589,90 +623,85 @@ public class WEEUpD implements Runnable {
 			; //Do Nothing. You're there already
 		else
 			mState = State.UNKNOWN;
-		log("transfer() DONE");
+		//END If/Else Input
 		return true;
-	}
+	} //END transfer()
 
 	private boolean userAvail(String usr) {
-		log("userAvail() START");
 		log("Checking if username is already taken");
 		log("User: " + usr);
 
 		try {
+			//Open Passwd File Reader
 			BufferedReader passwdInput = new BufferedReader(new FileReader("passwd"));
+			//Get the first line
 			String line = passwdInput.readLine();
+			//As long as we have a line...
 			while(line != null) {
+				//...parse it
 				String[] auth = line.split(":");
+				//...if we found the requested user name
 				if(usr.equals(auth[0])) {
-					log("Found Username in passwd: " + usr);
+					//...they'll have to try again
+					log("User name is TAKEN");
 					return false;
 				} else
+					//...otherwise, read the next line
 					line = passwdInput.readLine();
-			} //END while
+				//END If/Else User Found
+			} //END While Line NOT NULL
 		} catch(Exception e) {
 			errorOut(e.toString(), e);
 			resetClient();
 			return false;
-		}
-		log("userAvail() DONE");
+		} //END Try/Catch
+		log("User name is FREE");
 		return true;
-	}
+	} //END userAvail(String)
 
 	private boolean verifyLogin(String user, String hash) {
-		log("verifyLogin() START");
                 log("Authenticating login information...");
                 if(user == null || hash == null) {
                         log("Received NULL input");
                         return false;
-                }
+                } //END If User NULL OR Hash NULL
 
-                log("User: " + user + " | Hash: " + hash);
+                log("User: " + user);
+		log("Hash: " + hash);
                 try {
-                        BufferedReader passwdInput = new BufferedReader(new FileReader("passwd"));
-                        String line = passwdInput.readLine();
-                        while(line != null) {
-                                String[] auth = line.split(":");
-                                if(user.equals(auth[0]) && hash.equals(auth[1])) {
+			//Open Passwd File Reader...
+			BufferedReader passwdInput = new BufferedReader(new FileReader("passwd"));
+			//Get First Line...
+			String line = passwdInput.readLine();
+			//While we still have a line...
+			while(line != null) {
+				//...parse the credentials
+				//FORMAT:
+				//user:hash
+				String[] auth = line.split(":");
+				//...if credentials are valid...
+				if(user.equals(auth[0]) && hash.equals(auth[1])) {
+					//...they've logged in
 					log("Login Successful");
-                                        return true;
-				} else
-                                        line = passwdInput.readLine();
-                        }
+					return true;
+				} else //...otherwise...
+					//...check the next line
+					line = passwdInput.readLine();
+				//END If/Else User & Hash Authorized
+			} //END While Line NOT NULL
+			//If we're here, we ran out of users
 			log("Login Failed");
-                        return false;
+			return false;
                 } catch(IOException e) {
                         System.out.println("I/O Error During checkLogin()");
                         System.out.println(e);
                         System.exit(-1);
-                }
-		log("verifyLogin() DONE");
-                return false;
-	}
-
-	/*public boolean processInput() {
-		log("processInput() START");
-		receive();
-		try {
-			sStringBuffer = null;
-			sStringBuffer = mInputStream.readLine();
-			if(sStringBuffer == null) {
-				log("Received NULL From Client");
-				resetClient();
-				return false;
-			}
-	
-			log("Received String: " + sStringBuffer);
-			log("processInput() DONE");
-		} catch(Exception e) {
-			errorOut("ERROR: " + e, e);
-		}
-
-		log("processInput() DONE");
-		return true;
-	}*/
+                } //END Try/Catch
+                return false; //Assume failure
+	} //END verifyLogin(String, String)
 
 	private boolean send(String s) {
-		log("send() START");
+		log("Sending message to client...");
 		try {
 			//If this is a secure transmission...
 			if(bEncrypt) {
@@ -680,9 +709,9 @@ public class WEEUpD implements Runnable {
 				byte[] b = encrypt(s);
 				//And send the bytes...
 				if(sendBytes(b) == false) return false;
-				log("Successfully Sent Encrypted Message: " + s);
+				log("Successfully Sent Encrypted Message:\n" + s);
 				return true;
-			}
+			} //END If Encrypted
 			//Otherwise, proceed normally
 			s += "\n[END]";
 			log("Sending String to Client:\n" + s + "|Fin.");
@@ -692,17 +721,19 @@ public class WEEUpD implements Runnable {
 			e.printStackTrace();
 			resetClient();
 			return false;
-		}
-		log("send() DONE");
+		} //END Try/Catch
+		log("Successfully Sent Message");
 		return true;
-	}
+	} //END send(String)
 
 	private boolean sendBytes(byte[] b) {
+		//Check Input
 		if(b == null) return false;
-		log("sendBytes() START");
 		try {
 			log("Sending " + b.length + " bytes to client:\n" + toHexString(b));
+			//Notify client of incoming byte length
 			mDOutStream.writeInt(b.length);
+			//Send the bytes
 			mRawOutStream.write(b);
 		} catch(Exception e) {
 			log("Error Sending Bytes to Client");
@@ -710,27 +741,26 @@ public class WEEUpD implements Runnable {
 			resetClient();
 			return false;
 		} //END Try/Catch
-		log("sendBytes() DONE");
 		return true;
-	} //END sendBytes()
+	} //END sendBytes(byte[])
 
 	private byte[] encrypt(String plain) {
-		if(plain == null)
-			return null;
+		//Check Input
+		if(plain == null) return null;
 		byte[] cipher;
 		try {
+			//Convert Plain Text to Cipher Bytes
 			cipher = mECipher.doFinal(plain.getBytes());
 		} catch(Exception e) {
-			log("Error Performing Encryption:\n\t" + e.toString());
+			log("Error Performing Encryption: " + e.toString());
 			e.printStackTrace();
 			resetClient();
 			return null;
 		} //END Try/Catch
 		return cipher;
-	} //END encrypt()
+	} //END encrypt(String)
 
 	public String receive() {
-		log("receive() START");
 		//Clear buffers
 		sLineBuffer = sStringBuffer = "";
 		try {
@@ -741,9 +771,8 @@ public class WEEUpD implements Runnable {
 					throw new Exception("Null Client Input");
 				else
 					log("Received: " + sStringBuffer);
-			}
-			//Otherwise ..
-			else
+			} else //Otherwise, proceed normally...
+			//NOTE: Indentation Intentionally Removed
 			//As long as haven't gotten the end notification...
 			while(!sLineBuffer.equals("[END]")) {
 				//...keep pulling data
@@ -757,17 +786,12 @@ public class WEEUpD implements Runnable {
 				} else {
 					//...otherwise we're good
 					log("Received: " + sLineBuffer);
-					//If it's the quit string, we should kill connection
-					if(sLineBuffer.equals("[QUIT]")) {
-						log("Received Quit String");
-						resetClient();
-						return null;
-					} else if(!sLineBuffer.equals("[END]"))
+					if(!sLineBuffer.equals("[END]"))
 						sStringBuffer += sLineBuffer + "\n";
-					//END If/Else QUIT
+					//END If END
 				} //END If/Else NULL
-			} //END While ![END]
-			//END If/Else (Encrypted)
+			} //END While NOT END
+			//END If/Else Encrypted
 
 			//If we received the quit string
 			if(sStringBuffer.contains("[QUIT]")) {
@@ -775,38 +799,32 @@ public class WEEUpD implements Runnable {
 				log("Received Quit String");
 				resetClient();
 				return null;
-			} //END If [QUIT]
+			} //END If QUIT
 		} catch(Exception e) {
 			log("Error while receiving input from client");
 			e.printStackTrace();
 			resetClient();
 			return null;
 		} //END Try/Catch
-		log("receive() DONE");
 		return sStringBuffer;
 	} //END receive()
 
 	public byte[] receiveBytes() {
-		log("receiveBytes() START");
 		byte[] retVal = null;
 		int b;
 		try {
+			//Get Byte Length
 			int l = mDInStream.readInt();
+			//Initialize Byte Array
 			retVal = new byte[l];
-			log("Initialized retVal[" + l + "]");
+			//Get the Bytes
 			log("Reading " + l + " bytes from socket");
-			if(l > 0)
-				mDInStream.readFully(retVal);
-			//if((b = mRawInStream.available()) > 0)
-			//	throw new Exception("Too Many Bytes, " + b + " remaining");
+			if(l > 0) mDInStream.readFully(retVal);
 			log("Received Bytes:\n" + toHexString(retVal));
 		} catch(Exception e) {
-			/*log("Error Receiving Bytes From Client");
-			e.printStackTrace();
-			resetClient();*/
+			log("Error Receiving Bytes From Client: " + e.toString());
 			return null;
 		} //END Try/Catch
-		log("receiveBytes() DONE");
 		return retVal;
 	} //END receiveBytes()
 
@@ -815,7 +833,7 @@ public class WEEUpD implements Runnable {
 			return null;
 		String plain = null;
 		try {
-			//Decrypt & Convert to String
+			//Decrypt & Convert Cipher Bytes to Plain Text
 			plain = new String(mDCipher.doFinal(cipher));
 		} catch(Exception e) {
 			log("Error During Decryption: " + e.toString());
@@ -824,10 +842,10 @@ public class WEEUpD implements Runnable {
 			return null;
 		} //END Try/Catch
 		return plain;
-	} //END decrypt()
+	} //END decrypt(byte[])
 
 	public boolean resetClient() {
-		log("resetClient() START");
+		log("Resetting Client Connection");
 		//Close all streams & reset to initial state
 		try {
 			mOutputStream.close();
@@ -846,27 +864,30 @@ public class WEEUpD implements Runnable {
 			sLineBuffer = sStringBuffer = null;
 			mState = State.START;
 			bEncrypt = false;
+			log("Reset Buffers & State");
 		} catch(Exception e) {
 			errorOut("ERROR: " + e, e);
 		} //END Try/Catch
-		log("resetClient() DONE");
 		return false;
 	} //END resetClient()
 
 	public static void printUsage() {
-		String msg = "USAGE: java WEEUpD [port] [host]\n";
+		String msg = "USAGE: java WEEUpD [port] [host]\n"
+			   + "\t[port] : Local Port to Listen On\n"
+			   + "\t[host] : Host name to use (NOT IMPLEMENTED)";
 		System.out.println(msg);
 	} //END printUsage()
 
 	public static void log(String s) {
+		//TODO Unique server hostname/process identifier
 		System.out.println((new Date()).toString() + " (SERVER): " + s);
-	} //END log()
+	} //END log(String)
 
 	public static void errorOut(String msg, Exception e) {
 		log(msg);
 		e.printStackTrace();
 		System.exit(-1);
-	} //END errorOut
+	} //END errorOut(String, Exception)
 
 
 //**************************************************************
