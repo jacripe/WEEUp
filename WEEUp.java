@@ -102,6 +102,37 @@ public class WEEUp {
 	
 //------------------
 //	Initializers
+	public static WEEUp parseArgs(String[] a) {
+		String msg = "Parsing Arguments:";
+		for(String s: a) msg += "\t" + s;
+
+		WEEUp retVal = null;
+		//Check Number of Arguments...
+		switch(a.length) {
+		case 0:
+			log("No arguments. Using default constructor");
+			break;
+		case 1:
+			retVal = new WEEUp(Integer.parseInt(a[0]));
+			break;
+		case 2:
+			retVal = new WEEUp(Integer.parseInt(a[0]), a[1]);
+			break;
+		case 3:
+			retVal = new WEEUp(Integer.parseInt(a[0]), a[1]);
+			retVal.nVerbosity = Integer.parseInt(a[2]);
+		default:
+			log("Too many arguments");
+			printUsage();
+			log("Using default constructor");
+			break;
+		} //END Switch Number of Arguments
+		if(retVal == null)
+			retVal = new WEEUp();
+		//END If No Constructor Called
+		return retVal;
+	} //END parseArgs(String[])
+
 	public void createSocket() {
 		log("Connecting to server...");
 		try {
@@ -510,7 +541,7 @@ public class WEEUp {
 			boolean badInput = true;
 			while(badInput) {
 				//...prompt user
-				System.out.print("Enter Your Choice (M/H/Q)\n: ");
+				System.out.print("Enter Your Choice (R/T/M/H/Q)\n: ");
 				//...get input
 				sLineBuffer = mConsole.readLine();
 				if(sLineBuffer == null || sLineBuffer.isEmpty()) {
@@ -527,13 +558,23 @@ public class WEEUp {
 					quit();
 				else if(choice == 'h')
 					help();
-				else if(choice == 'm') {
+				else if(choice == 'm' || choice == 'r' || choice == 't') {
 					badInput = false;
-					send("[MAIN]");
-				} else
+					switch(choice) {
+					case 'q': quit(); break;
+					case 'h': help(); break;
+					case 'm': send("[MAIN]"); break;
+					case 'r': send("[RESET]"); break;
+					case 't': send("[TRANSFER]"); break;
+					default:
+					} //END Switch Choice
+				} else {
+					badInput = true;
 					System.out.println("Sorry, invalid selection.\n"
-					+ "Please try: (M)ain Menu, (H)elp or (Q)uit");
-				//END If/Else Choice Q/H/M/Other
+					+ "Please try:\n"
+					+ "\t(R)eset, (T)ransfer, (M)ain\n"
+					+ "\t(H)elp or (Q)uit");
+				} //END If/Else Choice
 			} //END While Bad Input
 		} catch(Exception e) {
 			errorOut("ERROR: " + e.toString(), e);
@@ -549,7 +590,7 @@ public class WEEUp {
 			boolean badInput = true;
 			while(badInput) {
 				//...prompt user
-				System.out.print("Enter Your Choice (M/H/Q)\n: ");
+				System.out.print("Enter Your Choice (L/U/M/H/Q)\n: ");
 				//...get input
 				sLineBuffer = mConsole.readLine();
 				if(sLineBuffer == null || sLineBuffer.isEmpty()) {
@@ -566,19 +607,31 @@ public class WEEUp {
 					quit();
 				else if(choice == 'h')
 					help();
-				else if(choice == 'm') {
+				else if(choice == 'm' || choice == 'l' || choice == 'u') {
 					badInput = false;
-					send("[MAIN]");
-				} else
+					switch(choice) {
+					case 'm':
+						send("[MAIN]");
+						break;
+					case 'l':
+						send("[LIST]");
+						break;
+					case 'u':
+						send("[UPLOAD]");
+						break;
+					} //END Switch Choice
+				} else 
 					System.out.println("Sorry, invalid selection.\n"
 					+ "Please try: (M)ain Menu, (H)elp or (Q)uit");
-				//END If/Else Choice Q/H/M/Other
+				//END If/Else Choice
 			} //END While Bad Input
 		} catch(Exception e) {
 			errorOut("ERROR: " + e.toString(), e);
 		} //END Try/Catch
 	} //END transfer()
 
+//-------------------
+//	I/O Functions
 	public String receive() {
 		log("Receiving Server Response...");
 		//Clear Buffers
@@ -592,6 +645,7 @@ public class WEEUp {
 					throw new Exception("NULL Server Input");
 				sStringBuffer = sStringBuffer.trim();
 				log("Received:\n" + sStringBuffer);
+				System.out.println("========= END SERVER =========\n");
 				return sStringBuffer;
 			} //END If Encrypted
 
@@ -606,11 +660,12 @@ public class WEEUp {
 				sStringBuffer += sLineBuffer + "\n";
 			} //END While NOT END
 			log("Received: " + sStringBuffer);
+			System.out.println("========= END SERVER =========\n");
 		} catch(Exception e) {
 			errorOut("ERROR: " + e, e);
 		} //END Try/Catch
 		return sStringBuffer;
-	} //END Receive
+	} //END receive()
 
 	public byte[] receiveBytes() {
 		byte[] retVal = null;
@@ -651,6 +706,7 @@ public class WEEUp {
 				//& send
 				if(!sendBytes(c)) return false;
 				log("Successfully Sent Encrypted Message: " + msg);
+				System.out.println("========= END CLIENT =========\n");
 				return true;
 			} //END If Encrypted
 
@@ -691,37 +747,6 @@ public class WEEUp {
 		} //END Try/Catch
 		return cipher;
 	} //END encrypt(String)
-
-	public static WEEUp parseArgs(String[] a) {
-		String msg = "Parsing Arguments:";
-		for(String s: a) msg += "\t" + s;
-
-		WEEUp retVal = null;
-		//Check Number of Arguments...
-		switch(a.length) {
-		case 0:
-			log("No arguments. Using default constructor");
-			break;
-		case 1:
-			retVal = new WEEUp(Integer.parseInt(a[0]));
-			break;
-		case 2:
-			retVal = new WEEUp(Integer.parseInt(a[0]), a[1]);
-			break;
-		case 3:
-			retVal = new WEEUp(Integer.parseInt(a[0]), a[1]);
-			retVal.nVerbosity = Integer.parseInt(a[2]);
-		default:
-			log("Too many arguments");
-			printUsage();
-			log("Using default constructor");
-			break;
-		} //END Switch Number of Arguments
-		if(retVal == null)
-			retVal = new WEEUp();
-		//END If No Constructor Called
-		return retVal;
-	} //END parseArgs(String[])
 
 	public static void log(String msg) {
 		if(nVerbosity > 0)

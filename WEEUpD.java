@@ -44,9 +44,13 @@ public class WEEUpD implements Runnable {
 	private DataInputStream		mDInStream;
 	private DataOutputStream	mDOutStream;
 
-	private File		fPasswd = new File("passwd");
+	private File			fPasswd = new File("passwd");
 
-	private State		mState;
+	private State			mState;
+
+	private static String		sUser = "";
+	private static final String	sCWD = System.getProperty("user.dir");
+	private static final String	sFS = System.getProperty("file.separator");
 
 	//Encryption Members
 	private static boolean		bEncrypt = false; //Whether or not Encryption is Available
@@ -207,232 +211,6 @@ public class WEEUpD implements Runnable {
 		} //END Try/Catch
 	} //END listenSocket()
 
-//------------------
-//	Misc Members
-	public boolean doShit() {
-		log("Time to do something...");
-		//Send Menu to Client
-		boolean success = sendMenu();
-		//If there was a problem...
-		if(!success)
-			//...start over
-			return false;
-		//END If NOT Success
-		//Otherwise, run the appropriate function
-		switch(mState) {
-		case START:
-			success = start();
-			break;
-		case CREATE:
-			success = create();
-			break;
-		case LOGIN:
-			success = login();
-			break;
-		case MAIN:
-			success = mainMenu();
-			break;
-		case PROFILE:
-			success = profile();
-			break;
-		case TRANSFER:
-			success = transfer();
-			break;
-		default:
-			errorOut("UNKNOWN STATE",
-				new Exception("Uknown State"));
-			success = false;
-		} //END Switch STATE
-		//If there was a problem...
-		if(!success)
-			//...we should start over
-			return false;
-		//Otherwise, we're good
-		return true;
-	} //END doShit()
-
-	public boolean sendMenu() {
-		log("Sending menu to client...");
-		String s = "";
-		switch(mState) {
-		case START:
-			log("Start Menu");
-			s = "WEEUpD " + sVersion + "\n"
-			+ "(K) 2014 J. A. Cripe <wiseeyesent.com>\n"
-			+ "\nWhat would you like to do?\n"
-			+ "C) Create an account\n"
-			+ "L) Login\n"
-			+ "[START]";
-			break;
-		case CREATE:
-			log("Create Menu");
-			s = "Please enter your user name and password (twice)\n"
-			+ "[CREATE]";
-			break;
-		case LOGIN:
-			log("Login Menu");
-			s = "Please sign in...\n"
-			+ "[LOGIN]";
-			break;
-		case MAIN:
-			log("Main Menu");
-			s = "\tWEEUpD " + sVersion + "\n"
-			+ "M) Main Menu\n"
-			+ "P) User Profile\n"
-			+ "T) File Transfer\n"
-			+ "Q) Quit\n"
-			+ "H) Help\n"
-			+ "Please enter your choice (M/P/T/Q/H)\n"
-			+ "[MAIN]";
-			break;
-		case PROFILE:
-			log("Profile Menu");
-			s = "\tUser Profile\n"
-			+ "[PROFILE]";
-			break;
-		case TRANSFER:
-			log("Transfer Menu");
-			s = "\tFile Transfer\n"
-			+ "[TRANSFER]";
-			break;
-		default:
-			log("Unknown State");
-			s = "WARNING! Unknown State!\n"
-			+ "[UNKNOWN]";
-			break;
-		} //END Switch STATE
-		if(!send(s))
-			return false;
-		//END If Send FAILED
-		return true;
-	} //END sendMenu()
-
-	private boolean start() {
-		log("Do they want to create a user or login?");
-		//Get User Input
-		String input = receive();
-		//If we received NULL input...
-		if(input == null) {
-			//...start over
-			log("Received NULL from User");
-			resetClient();
-			return false;
-		} //END If Input NULL
-		//Otherwise, process the input...
-		if(input.equals("[CREATE]")) {
-			log("Received CREATE request...");
-			mState = State.CREATE;
-			return true;
-		} else if(input.equals("[LOGIN]")) {
-			log("Received LOGIN request...");
-			mState = State.LOGIN;
-			return true;
-		} else
-			log("Received Invalid User Input");
-		//END If/Else Input
-		return false;
-	} //END start()
-
-	private boolean create() {
-		log("Creating a new user...");
-		boolean failed = true;
-		//While we haven't succeeded...
-		while(failed) {
-			//...get user name
-			String user = receive();
-			//...check for null
-			if(user == null) {
-				log("Received NULL User");
-				resetClient();
-				return false;
-			} else if (user.contains("[FAILED]")) {
-				log("Client failed user name selection");
-				failed = true;
-				continue;
-			} //END If/Else User NULL/FAILED
-			user = user.trim().toLowerCase();
-			if(!userAvail(user)) {
-				send("Invalid Username\n[FAILED]");
-				return true;
-			} //END If User NOT Avail
-			//...notify client
-			send("[RECEIVED]");
-			//...get password hash
-			String hash = receive();
-			//...check for null/failed
-			if(hash == null) {
-				log("Received NULL Hash");
-				resetClient();
-				return false;
-			} else if(hash.contains("[FAILED]")) {
-				log("Client failed password entry");
-				failed = true;
-				continue;
-			} //END If/Else Hash NULL/FALIED
-			//...write user:hash to passwd file
-			try {
-				log("Writing " + user + ":" + hash + " to passwd...");
-				FileWriter passwdOut = new FileWriter("passwd", true);
-				passwdOut.write(user + ":" + hash + "\n");
-				passwdOut.flush();
-				passwdOut.close();
-				log("DONE");
-			} catch(Exception e) {
-				errorOut("Error writing to passwd", e);
-				resetClient();
-				return false;
-			} //END Try/Catch
-			//...notify client
-			send("[SUCCESS]");
-			mState = State.LOGIN;
-			failed = false;
-		} //END While Failed
-		return true;
-	} //END create()
-	
-	private boolean login() {
-		log("Starting Login...");
-		//TODO Change this to a configurable variable later
-		int badLogins = 0;
-		//While we still have attempts & haven't succeeded
-		while(badLogins < 3 && badLogins >= 0) {
-			//...get user name
-			String user = receive();
-			if(user == null) {
-				log("Received NULL User");
-				resetClient();
-				return false;
-			} //END If User NULL
-			user = user.trim().toLowerCase();
-			//...notify client
-			send("[RECEIVED]");
-			//...get password hash
-			String hash = receive();
-			if(hash == null) {
-				log("Received NULL Hash");
-				resetClient();
-				return false;
-			} //END If Hash NULL
-			hash = hash.trim();
-			//..check for valid credentials
-			if(!verifyLogin(user, hash)) {
-				badLogins++;
-				send("[FAILED]");
-			} else {
-				mState = State.MAIN;
-				badLogins = -1;
-			} //END If/Else Failed Verify Login
-		} //END While Bad Logins
-		//If we used up our attempts, start over
-		if(badLogins >= 3)
-			resetClient();
-		//Otherwise, we're good
-		else if(badLogins == -1)
-			send("[SUCCESS]");
-		//END If/Else Bad Logins >3/-1
-		return true;
-	} //END login()
-
 	//Adapted from Oracle documentation
 	//http://docs.oracle.com/javase/7/docs/technotes/guides/security/crypto/CryptoSpec.html#AppD
 	//TODO Make Configurable (SKIP/Generated Parms, Cipher, Key Length, Etc.)
@@ -550,19 +328,260 @@ public class WEEUpD implements Runnable {
 		return true;
 	} //END initEncryption()
 
-	private String toHexString(byte[] b) {
-		StringBuffer sBuff = new StringBuffer();
-		int length = b.length;
-		char[] hexChars = { '0', '1', '2', '3', '4', '5', '6', '7',
-				    '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
-		for(int i = 0; i < length; i++) {
-			int high = ((b[i] & 0xf0) >> 4);
-			int low = (b[i] & 0x0f);
-			sBuff.append(hexChars[high]);
-			sBuff.append(hexChars[low]);
-		}
-		return sBuff.toString();
-	}
+//--------------------
+//	Menu Functions
+	public boolean doShit() {
+		log("Time to do something...");
+		//Send Menu to Client
+		boolean success = sendMenu();
+		//If there was a problem...
+		if(!success)
+			//...start over
+			return false;
+		//END If NOT Success
+		//Otherwise, run the appropriate function
+		switch(mState) {
+		case START:
+			success = start();
+			break;
+		case CREATE:
+			success = create();
+			break;
+		case LOGIN:
+			success = login();
+			if(success) success = checkUserProfile();
+			break;
+		case MAIN:
+			success = mainMenu();
+			break;
+		case PROFILE:
+			success = profile();
+			break;
+		case TRANSFER:
+			success = transfer();
+			break;
+		default:
+			errorOut("UNKNOWN STATE",
+				new Exception("Uknown State"));
+			success = false;
+		} //END Switch STATE
+		//If there was a problem...
+		if(!success)
+			//...we should start over
+			return false;
+		//Otherwise, we're good
+		return true;
+	} //END doShit()
+
+	public boolean sendMenu() {
+		log("Sending menu to client...");
+		String s = "";
+		switch(mState) {
+		case START:
+			log("Start Menu");
+			s = "WEEUpD " + sVersion + "\n"
+			+ "(K) 2014 J. A. Cripe <wiseeyesent.com>\n"
+			+ "\nWhat would you like to do?\n"
+			+ "C) Create an account\n"
+			+ "L) Login\n"
+			+ "[START]";
+			break;
+		case CREATE:
+			log("Create Menu");
+			s = "Please enter your user name and password (twice)\n"
+			+ "[CREATE]";
+			break;
+		case LOGIN:
+			log("Login Menu");
+			s = "Please sign in...\n"
+			+ "[LOGIN]";
+			break;
+		case MAIN:
+			log("Main Menu");
+			s = "WEEUpD " + sVersion + "\n"
+			+ "-----------------\n"
+			+ "M) Main Menu\n"
+			+ "P) User Profile\n"
+			+ "T) File Transfer\n"
+			+ "Q) Quit\n"
+			+ "H) Help\n"
+			+ "Please enter your choice (M/P/T/Q/H)\n"
+			+ "[MAIN]";
+			break;
+		case PROFILE:
+			log("Profile Menu");
+			s = "User Profile\n"
+			+ "-----------------\n"
+			+ "User: " + sUser + "\n"
+			+ "Doc Root: " + sCWD + sFS + sUser + "\n"
+			+ "Cipher: " + sCipher + "\n"
+			+ "#Files: TODO\n"
+			+ "File Size: TODO\n"
+			+ "-----------------\n"
+			+ "\n"
+			+ "(R)eset Password\n"
+			+ "(T)ransfer Files\n"
+			+ "(M)ain Menu\n"
+			+ "(H)elp\n"
+			+ "(Q)uit\n"
+			+ "[PROFILE]";
+			break;
+		case TRANSFER:
+			log("Transfer Menu");
+			s = "\tFile Transfer\n"
+			+ "-----------------\n"
+			+ "DIR: " + sCWD + sFS + sUser + "\n"
+			+ "Count: TODO\n"
+			+ "Size: TODO\n"
+			+ "-----------------\n"
+			+ "\n"
+			+ "(L)ist Files\n"
+			+ "(U)pload File\n"
+			+ "(M)ain Menu\n"
+			+ "(H)elp\n"
+			+ "(Q)uit\n"
+			+ "[TRANSFER]";
+			break;
+		default:
+			log("Unknown State");
+			s = "WARNING! Unknown State!\n"
+			+ "[UNKNOWN]";
+			break;
+		} //END Switch STATE
+		if(!send(s))
+			return false;
+		//END If Send FAILED
+		return true;
+	} //END sendMenu()
+
+//-----------------------
+//	Command Functions
+	private boolean start() {
+		log("Do they want to create a user or login?");
+		//Get User Input
+		String input = receive();
+		//If we received NULL input...
+		if(input == null) {
+			//...start over
+			log("Received NULL from User");
+			resetClient();
+			return false;
+		} //END If Input NULL
+		//Otherwise, process the input...
+		if(input.equals("[CREATE]")) {
+			log("Received CREATE request...");
+			mState = State.CREATE;
+			return true;
+		} else if(input.equals("[LOGIN]")) {
+			log("Received LOGIN request...");
+			mState = State.LOGIN;
+			return true;
+		} else
+			log("Received Invalid User Input");
+		//END If/Else Input
+		return false;
+	} //END start()
+
+	private boolean create() {
+		log("Creating a new user...");
+		boolean failed = true;
+		//While we haven't succeeded...
+		while(failed) {
+			//...get user name
+			String user = receive();
+			//...check for null
+			if(user == null) {
+				log("Received NULL User");
+				resetClient();
+				return false;
+			} else if (user.contains("[FAILED]")) {
+				log("Client failed user name selection");
+				failed = true;
+				continue;
+			} //END If/Else User NULL/FAILED
+			user = user.trim().toLowerCase();
+			if(!userAvail(user)) {
+				send("Invalid Username\n[FAILED]");
+				return true;
+			} //END If User NOT Avail
+			//...notify client
+			send("[RECEIVED]");
+			//...get password hash
+			String hash = receive();
+			//...check for null/failed
+			if(hash == null) {
+				log("Received NULL Hash");
+				resetClient();
+				return false;
+			} else if(hash.contains("[FAILED]")) {
+				log("Client failed password entry");
+				failed = true;
+				continue;
+			} //END If/Else Hash NULL/FALIED
+			//...write user:hash to passwd file
+			try {
+				log("Writing " + user + ":" + hash + " to passwd...");
+				FileWriter passwdOut = new FileWriter("passwd", true);
+				passwdOut.write(user + ":" + hash + "\n");
+				passwdOut.flush();
+				passwdOut.close();
+				log("DONE");
+			} catch(Exception e) {
+				errorOut("Error writing to passwd", e);
+				resetClient();
+				return false;
+			} //END Try/Catch
+			//...notify client
+			send("[SUCCESS]");
+			mState = State.LOGIN;
+			failed = false;
+		} //END While Failed
+		return true;
+	} //END create()
+	
+	private boolean login() {
+		log("Starting Login...");
+		//TODO Change this to a configurable variable later
+		int badLogins = 0;
+		//While we still have attempts & haven't succeeded
+		while(badLogins < 3 && badLogins >= 0) {
+			//...get user name
+			String user = receive();
+			if(user == null) {
+				log("Received NULL User");
+				resetClient();
+				return false;
+			} //END If User NULL
+			user = user.trim().toLowerCase();
+			sUser = user;
+			//...notify client
+			send("[RECEIVED]");
+			//...get password hash
+			String hash = receive();
+			if(hash == null) {
+				log("Received NULL Hash");
+				resetClient();
+				return false;
+			} //END If Hash NULL
+			hash = hash.trim();
+			//..check for valid credentials
+			if(!verifyLogin(user, hash)) {
+				badLogins++;
+				send("[FAILED]");
+			} else {
+				mState = State.MAIN;
+				badLogins = -1;
+			} //END If/Else Failed Verify Login
+		} //END While Bad Logins
+		//If we used up our attempts, start over
+		if(badLogins >= 3)
+			resetClient();
+		//Otherwise, we're good
+		else if(badLogins == -1)
+			send("[SUCCESS]");
+		//END If/Else Bad Logins >3/-1
+		return true;
+	} //END login()
 
 	private boolean mainMenu() {
 		log("Starting Main Menu...");
@@ -573,7 +592,7 @@ public class WEEUpD implements Runnable {
 		input = input.trim();
 		System.out.println("(CLIENT): " + input);
 		if(input.equals("[MAIN]")) {
-			//Do Nothing, You're Already There
+			; //Do Nothing, You're Already There
 		} else if(input.equals("[PROFILE]")) {
 			mState = State.PROFILE;
 		} else if(input.equals("[TRANSFER]")) {
@@ -594,12 +613,14 @@ public class WEEUpD implements Runnable {
 		input = input.trim();
 		System.out.println("(CLIENT): " + input);
 		//Process It...
-		if(input.equals("[MAIN]"))
+		if(input.contains("[MAIN]"))
 			mState = State.MAIN;
-		else if(input.equals("[PROFILE]"))
+		else if(input.contains("[PROFILE]"))
 			; //Do Nothing. You're there already
-		else if(input.equals("[TRANSFER]"))
+		else if(input.contains("[TRANSFER]"))
 			mState = State.TRANSFER;
+		else if(input.contains("[RESET]"))
+			resetPassword();
 		else
 			mState = State.UNKNOWN;
 		//END If/Else Input
@@ -615,11 +636,15 @@ public class WEEUpD implements Runnable {
 		input = input.trim();
 		System.out.println("(CLIENT): " + input);
 		//Process It...
-		if(input.equals("[MAIN]"))
+		if(input.contains("[MAIN]"))
 			mState = State.MAIN;
-		else if(input.equals("[PROFILE]"))
+		else if(input.contains("[PROFILE]"))
 			mState = State.PROFILE;
-		else if(input.equals("[TRANSFER]"))
+		else if(input.contains("[LIST]"))
+			listFiles();
+		else if(input.contains("[UPLOAD]"))
+			upload();
+		else if(input.contains("[TRANSFER]"))
 			; //Do Nothing. You're there already
 		else
 			mState = State.UNKNOWN;
@@ -627,6 +652,8 @@ public class WEEUpD implements Runnable {
 		return true;
 	} //END transfer()
 
+//---------------------------
+//	Operational Functions
 	private boolean userAvail(String usr) {
 		log("Checking if username is already taken");
 		log("User: " + usr);
@@ -660,15 +687,15 @@ public class WEEUpD implements Runnable {
 	} //END userAvail(String)
 
 	private boolean verifyLogin(String user, String hash) {
-                log("Authenticating login information...");
-                if(user == null || hash == null) {
-                        log("Received NULL input");
-                        return false;
-                } //END If User NULL OR Hash NULL
+		log("Authenticating login information...");
+		if(user == null || hash == null) {
+			log("Received NULL input");
+			return false;
+		} //END If User NULL OR Hash NULL
 
-                log("User: " + user);
+		log("User: " + user);
 		log("Hash: " + hash);
-                try {
+		try {
 			//Open Passwd File Reader...
 			BufferedReader passwdInput = new BufferedReader(new FileReader("passwd"));
 			//Get First Line...
@@ -692,13 +719,40 @@ public class WEEUpD implements Runnable {
 			//If we're here, we ran out of users
 			log("Login Failed");
 			return false;
-                } catch(IOException e) {
-                        System.out.println("I/O Error During checkLogin()");
-                        System.out.println(e);
-                        System.exit(-1);
-                } //END Try/Catch
-                return false; //Assume failure
+		} catch(IOException e) {
+			System.out.println("I/O Error During checkLogin()");
+			System.out.println(e);
+			System.exit(-1);
+		} //END Try/Catch
+		return false; //Assume failure
 	} //END verifyLogin(String, String)
+
+	private boolean checkUserProfile() {
+		log("Checking User Profile...");
+		try {
+			log("CWD: " + sCWD);
+			log("User Dir: " + sCWD + sFS + sUser);
+		} catch(Exception e) {
+			log("ERROR: " + e.toString());
+			return false;
+		}
+		return true;
+	}
+
+	private boolean resetPassword() {
+		log("Resetting Password...");
+		return true;
+	}
+
+	private boolean listFiles() {
+		log("Listing Files...");
+		return true;
+	}
+
+	private boolean upload() {
+		log("Uploading File...");
+		return true;
+	}
 
 	private boolean send(String s) {
 		log("Sending message to client...");
@@ -710,6 +764,7 @@ public class WEEUpD implements Runnable {
 				//And send the bytes...
 				if(sendBytes(b) == false) return false;
 				log("Successfully Sent Encrypted Message:\n" + s);
+				System.out.println("=========END SERVER RESPONSE=========\n");
 				return true;
 			} //END If Encrypted
 			//Otherwise, proceed normally
@@ -759,6 +814,20 @@ public class WEEUpD implements Runnable {
 		} //END Try/Catch
 		return cipher;
 	} //END encrypt(String)
+
+	private String toHexString(byte[] b) {
+		StringBuffer sBuff = new StringBuffer();
+		int length = b.length;
+		char[] hexChars = { '0', '1', '2', '3', '4', '5', '6', '7',
+				    '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
+		for(int i = 0; i < length; i++) {
+			int high = ((b[i] & 0xf0) >> 4);
+			int low = (b[i] & 0x0f);
+			sBuff.append(hexChars[high]);
+			sBuff.append(hexChars[low]);
+		}
+		return sBuff.toString();
+	}
 
 	public String receive() {
 		//Clear buffers
@@ -862,6 +931,7 @@ public class WEEUpD implements Runnable {
 			log("Closed Client Socket");
 
 			sLineBuffer = sStringBuffer = null;
+			sUser = "";
 			mState = State.START;
 			bEncrypt = false;
 			log("Reset Buffers & State");
