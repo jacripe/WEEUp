@@ -48,7 +48,10 @@ public class WEEUpD implements Runnable {
 
 	private State			mState;
 
+	private static int		nCount = 0;
+	private static long		nSize = 0;
 	private static String		sUser = "";
+	private static String		sDocRoot = "";
 	private static final String	sCWD = System.getProperty("user.dir");
 	private static final String	sFS = System.getProperty("file.separator");
 
@@ -413,10 +416,10 @@ public class WEEUpD implements Runnable {
 			s = "User Profile\n"
 			+ "-----------------\n"
 			+ "User: " + sUser + "\n"
-			+ "Doc Root: " + sCWD + sFS + sUser + "\n"
+			+ "Doc Root: " + sDocRoot + "\n"
 			+ "Cipher: " + sCipher + "\n"
-			+ "File Count: TODO\n"
-			+ "File Size: TODO\n"
+			+ "Count: " + nCount + "\n"
+			+ " Size: " + nSize + "\n"
 			+ "-----------------\n"
 			+ "\n"
 			+ "(R)eset Password\n"
@@ -430,14 +433,15 @@ public class WEEUpD implements Runnable {
 			log("Transfer Menu");
 			s = "\tFile Transfer\n"
 			+ "-----------------\n"
-			+ "DIR: " + sCWD + sFS + sUser + "\n"
-			+ "Count: TODO\n"
-			+ "Size: TODO\n"
+			+ "DIR: " + sDocRoot + "\n"
+			+ "Count: " + nCount + "\n"
+			+ "Size: " + nSize + "\n"
 			+ "-----------------\n"
 			+ "\n"
 			+ "(L)ist Files\n"
 			+ "(U)pload File\n"
 			+ "(M)ain Menu\n"
+			+ "(P)rofile\n" 
 			+ "(H)elp\n"
 			+ "(Q)uit\n"
 			+ "[TRANSFER]";
@@ -554,6 +558,7 @@ public class WEEUpD implements Runnable {
 			} //END If User NULL
 			user = user.trim().toLowerCase();
 			sUser = user;
+			sDocRoot = sCWD + sFS + sUser;
 			//...notify client
 			send("[RECEIVED]");
 			//...get password hash
@@ -649,7 +654,8 @@ public class WEEUpD implements Runnable {
 		else
 			mState = State.UNKNOWN;
 		//END If/Else Input
-		return true;
+		return checkUserProfile();
+		//return true;
 	} //END transfer()
 
 //---------------------------
@@ -730,7 +736,7 @@ public class WEEUpD implements Runnable {
 	private boolean checkUserProfile() {
 		log("Checking User Profile...");
 		try {
-			File usrDir = new File(sCWD + sFS + sUser);
+			File usrDir = new File(sDocRoot);
 			if(usrDir.isDirectory())
 				log("User Dir: " + usrDir);
 			else
@@ -740,22 +746,110 @@ public class WEEUpD implements Runnable {
 					throw new Exception("Unable to create user directory....");
 				//END If/Else Make Directory
 			//END If/Else Is Directory
+			File[] files = usrDir.listFiles();
+			nCount = files.length;
+			nSize = 0;
+			for(int i = 0; i < files.length; i++)
+				nSize += files[i].length();
 		} catch(Exception e) {
 			log("ERROR: " + e.toString());
 			return false;
-		}
+		} //END Try/Catch
 		return true;
-	}
+	} //END checkUserProfile()
 
 	private boolean resetPassword() {
 		log("Resetting Password...");
+		boolean failed = true;
+		//While we haven't succeeded...
+		while(failed) {
+			//...get password hash
+			String hash = receive();
+			//...check for null/failed
+			if(hash == null) {
+			        log("Received NULL Hash");
+			        resetClient();
+			        return false;
+			} else if(hash.contains("[FAILED]")) {
+			        log("Client failed password entry");
+			        failed = true;
+			        continue;
+			} //END If/Else Hash NULL/FALIED
+			//...update passwd file contents with new hash
+			try {
+				//...get the current contents
+				log("Reading current passwd file...");
+				BufferedReader fIn = new BufferedReader(new FileReader("passwd"));
+				String line = null; String user = null;
+				String fTxt = "";
+				while((line = fIn.readLine()) != null) {
+					fTxt += line + "\n";
+					//...if this line matches the current user, save it
+					if(line.startsWith(sUser + ":")) user = line;
+				} //END While Read Line
+				fIn.close(); //...input stream no longer needed
+
+				//...if we didn't find current user
+				if(user == null || user.isEmpty()) //something is wrong
+					throw new Exception("User Passwd Not Found");
+				log("Found User Hash: " + user);
+
+				//...update to the new hash
+				log("Updating " + sUser + " hash...");
+				String curHash = user.split(":")[1];
+				log("Current Hash: " + curHash);
+				log("New Hash: " + hash);
+				user = user.replaceAll(curHash, hash);
+				log("New User String: " + user);
+				fTxt = fTxt.replaceAll(sUser + ":" + curHash, user);
+				log("New Passwd Contents:\n" + fTxt);
+
+				//...put it back in passwd file
+				log("Writing new contents to passwd...");
+				FileWriter passwdOut = new FileWriter("passwd", false);
+				passwdOut.write(fTxt);
+				passwdOut.flush();
+				passwdOut.close();
+				log("DONE");
+			} catch(Exception e) {
+				errorOut("Error writing to passwd", e);
+				resetClient();
+				return false;
+			} //END Try/Catch
+			//...notify client
+			send("[SUCCESS]");
+			failed = false;
+		} //END While Failed
 		return true;
-	}
+	} //END resetPassword()
 
 	private boolean listFiles() {
 		log("Listing Files...");
+		try {
+			//Formulate File List Response
+			//FORMAT:
+			//Doc Root: ...
+			//File List:
+			//File 1
+			//...
+			//File n
+			//[LIST]
+			//[END]
+			String files = "Doc Root: " + sDocRoot + "\n"
+				     + "File List:\n";
+			File dir = new File(sDocRoot);
+			File[] list = dir.listFiles();
+			for(int i = 0; i < list.length; i++)
+				files += list[i].getName() + " : "
+					+ list[i].length() + "\n";
+			files += "[LIST]";
+			send(files);
+		} catch(Exception e) {
+			log("ERROR: " + e.toString());
+			return false;
+		} //END Try/Catch
 		return true;
-	}
+	} //END listFiles()
 
 	private boolean upload() {
 		log("Uploading File...");
@@ -768,7 +862,7 @@ public class WEEUpD implements Runnable {
 			receive();
 			if(!sStringBuffer.contains("[FILE]"))
 				throw new Exception("Invalid File Notification From Client");
-			String fName = sCWD + sFS + sUser + sFS + sStringBuffer.split("\n")[0];
+			String fName = sDocRoot + sFS + sStringBuffer.split("\n")[0];
 			log("Received File Name: " + fName);
 
 			//TODO Check for duplicate files
@@ -988,7 +1082,7 @@ public class WEEUpD implements Runnable {
 			log("Closed Client Socket");
 
 			sLineBuffer = sStringBuffer = null;
-			sUser = "";
+			sUser = sDocRoot = "";
 			mState = State.START;
 			bEncrypt = false;
 			log("Reset Buffers & State");

@@ -32,6 +32,8 @@ public class WEEUp {
 	private String		sStringBuffer;
 	private String		sLineBuffer;
 	private String		sVersion = "v0.4a";
+	private String		sUser = "";
+	private String		sFS = System.getProperty("file.separator");
 
 	private Socket		mSocket;
 	private BufferedReader	mInputStream;
@@ -162,9 +164,105 @@ public class WEEUp {
 			errorOut("ERROR: " + e, e);
 		} //END Try/Catch
 	} //END createSocket()
+	
+	//Adapted from Oracle documentation:
+	//http://docs.oracle.com/javase/7/docs/technotes/guides/security/crypto/CryptoSpec.html#AppD
+	private boolean initEncryption() {
+		log("Initializing Encryption...");
+		try {
+			log("Waiting on Key Data From Server...");
+			byte[] serverPubKeyBytes = receiveBytes();
 
-//------------------
-//	Misc Members
+			//Instantiate DH Public Key From Bytes
+			KeyFactory kFac = KeyFactory.getInstance("DiffieHellman");
+			log("Initialized Key Factory");
+			X509EncodedKeySpec encKSpec =
+				new X509EncodedKeySpec(serverPubKeyBytes);
+			DHPublicKey mServerKey = (DHPublicKey) kFac.generatePublic(encKSpec);
+			log("Instantiated Server Public Key");
+
+			//Initialize Key Specifications
+			DHParameterSpec kParmSpec = mServerKey.getParams();
+
+			//Generate Client Keys
+			KeyPairGenerator kPGen = KeyPairGenerator.getInstance("DiffieHellman");
+			kPGen.initialize(kParmSpec);
+			KeyPair keyPair = kPGen.generateKeyPair();
+			log("Generated Client DH Public/Private Key Pair");
+
+			//Initialize Key Agreement
+			KeyAgreement kAgree = KeyAgreement.getInstance("DiffieHellman");
+			kAgree.init(keyPair.getPrivate());
+			log("Initialized Client Key Agreement");
+
+			//Encode Public Key For Transport
+			byte[] pubKeyBytes = keyPair.getPublic().getEncoded();
+			log("Encoded Public Key:\n" + toHexString(pubKeyBytes));
+
+			//Send Notification to Server
+			send("[RECEIVED]");
+			//Send Client Public Key to Server
+			sendBytes(pubKeyBytes);
+			log("Sent Encoded Public Key to Server");
+
+			//Get Confirmation & Secret Key Length From Server
+			//FORMAT:
+			//[PRIVKEY]
+			//Secret Key Length
+			//[RECEIVED]
+			//[END]
+			log("Waiting on Server Response");
+			receive();
+			if(!sStringBuffer.contains("[RECEIVED]"))
+				throw new Exception("Error Sending Public Key to Server");
+			log("Received Server Response:\n" + sStringBuffer);
+
+			//Agree Those Keys
+			kAgree.doPhase(mServerKey, true);
+			log("Client Key Agreement Complete");
+
+			//Generate Symmetric Client Secret Key (Should Match Server)
+			if(!sStringBuffer.contains("[PRIVKEY]"))
+				throw new Exception("Error Receiving Secret Key Length From Server");
+			int length = new Integer(sStringBuffer.split("\n")[1]).intValue();
+			aKeyBytes = new byte[length];
+			length = kAgree.generateSecret(aKeyBytes, 0);
+			log("Generated Client Secret Key Bytes:\n" + toHexString(aKeyBytes));
+
+			//Notify Server
+			send("[CIPHER]\n" + sCipher + "\n[SUCCESS]");
+			
+			//Generate Symetric Secret Key & Cipher Objects from Bytes
+			kAgree.doPhase(mServerKey, true);
+			mKey = kAgree.generateSecret(sCipher);
+			mECipher = Cipher.getInstance(sCipher);
+			mECipher.init(Cipher.ENCRYPT_MODE, mKey);
+			mDCipher = Cipher.getInstance(sCipher);
+			mDCipher.init(Cipher.DECRYPT_MODE, mKey);
+			bEncrypt = true;
+			log("Generated Client Secret Key & Cipher Objects Using "
+			   + sCipher + " Algorithm");
+
+			//Get Server Confirmation to Verify En/Decryption is functional
+			log("Waiting on Server Encryption Verification Test...");
+			receive();
+			if(!sStringBuffer.contains("[VERIFY_ENCRYPTION]"))
+				throw new Exception("Bad Server Encryption Test");
+			send("[SUCCESS]");
+
+			log("Waiting on Server Confirmation...");
+			receive();
+			if(!sStringBuffer.contains("[SUCCESS]"))
+				throw new Exception("Encryption Verification Failed");
+			log("SUCCESS! ENCRYPTION IS LIVE!");
+		} catch(Exception e) {
+			errorOut(e.toString(), e);
+		} //END Try/Catch
+		return true;
+	} //END initEncryption()
+
+//--------------------
+//	Menu Functions
 	public void doShit() {
 		log("Time to do something...");
 		//Get Server Input...
@@ -343,6 +441,7 @@ public class WEEUp {
 			log("Received Server Response: " + sStringBuffer);
 			if(sStringBuffer.contains("[SUCCESS]")) {
 				log("Successful Login!");
+				sUser = user;
 				failedLogins = -1;
 			} else
 				failedLogins++;
@@ -352,136 +451,7 @@ public class WEEUp {
 					new Exception("Invalid Credentials"));
 			//END If Out of Login Attempts
 		} //END While Failed & Attempts Remaining
-	}
-	
-	//Adapted from Oracle documentation:
-	//http://docs.oracle.com/javase/7/docs/technotes/guides/security/crypto/CryptoSpec.html#AppD
-	private boolean initEncryption() {
-		log("Initializing Encryption...");
-		try {
-			log("Waiting on Key Data From Server...");
-			byte[] serverPubKeyBytes = receiveBytes();
-
-			//Instantiate DH Public Key From Bytes
-			KeyFactory kFac = KeyFactory.getInstance("DiffieHellman");
-			log("Initialized Key Factory");
-			X509EncodedKeySpec encKSpec =
-				new X509EncodedKeySpec(serverPubKeyBytes);
-			DHPublicKey mServerKey = (DHPublicKey) kFac.generatePublic(encKSpec);
-			log("Instantiated Server Public Key");
-
-			//Initialize Key Specifications
-			DHParameterSpec kParmSpec = mServerKey.getParams();
-
-			//Generate Client Keys
-			KeyPairGenerator kPGen = KeyPairGenerator.getInstance("DiffieHellman");
-			kPGen.initialize(kParmSpec);
-			KeyPair keyPair = kPGen.generateKeyPair();
-			log("Generated Client DH Public/Private Key Pair");
-
-			//Initialize Key Agreement
-			KeyAgreement kAgree = KeyAgreement.getInstance("DiffieHellman");
-			kAgree.init(keyPair.getPrivate());
-			log("Initialized Client Key Agreement");
-
-			//Encode Public Key For Transport
-			byte[] pubKeyBytes = keyPair.getPublic().getEncoded();
-			log("Encoded Public Key:\n" + toHexString(pubKeyBytes));
-
-			//Send Notification to Server
-			send("[RECEIVED]");
-			//Send Client Public Key to Server
-			sendBytes(pubKeyBytes);
-			log("Sent Encoded Public Key to Server");
-
-			//Get Confirmation & Secret Key Length From Server
-			//FORMAT:
-			//[PRIVKEY]
-			//Secret Key Length
-			//[RECEIVED]
-			//[END]
-			log("Waiting on Server Response");
-			receive();
-			if(!sStringBuffer.contains("[RECEIVED]"))
-				throw new Exception("Error Sending Public Key to Server");
-			log("Received Server Response:\n" + sStringBuffer);
-
-			//Agree Those Keys
-			kAgree.doPhase(mServerKey, true);
-			log("Client Key Agreement Complete");
-
-			//Generate Symmetric Client Secret Key (Should Match Server)
-			if(!sStringBuffer.contains("[PRIVKEY]"))
-				throw new Exception("Error Receiving Secret Key Length From Server");
-			int length = new Integer(sStringBuffer.split("\n")[1]).intValue();
-			aKeyBytes = new byte[length];
-			length = kAgree.generateSecret(aKeyBytes, 0);
-			log("Generated Client Secret Key Bytes:\n" + toHexString(aKeyBytes));
-
-			//Notify Server
-			send("[CIPHER]\n" + sCipher + "\n[SUCCESS]");
-			
-			//Generate Symetric Secret Key & Cipher Objects from Bytes
-			kAgree.doPhase(mServerKey, true);
-			mKey = kAgree.generateSecret(sCipher);
-			mECipher = Cipher.getInstance(sCipher);
-			mECipher.init(Cipher.ENCRYPT_MODE, mKey);
-			mDCipher = Cipher.getInstance(sCipher);
-			mDCipher.init(Cipher.DECRYPT_MODE, mKey);
-			bEncrypt = true;
-			log("Generated Client Secret Key & Cipher Objects Using "
-			   + sCipher + " Algorithm");
-
-			//Get Server Confirmation to Verify En/Decryption is functional
-			log("Waiting on Server Encryption Verification Test...");
-			receive();
-			if(!sStringBuffer.contains("[VERIFY_ENCRYPTION]"))
-				throw new Exception("Bad Server Encryption Test");
-			send("[SUCCESS]");
-
-			log("Waiting on Server Confirmation...");
-			receive();
-			if(!sStringBuffer.contains("[SUCCESS]"))
-				throw new Exception("Encryption Verification Failed");
-			log("SUCCESS! ENCRYPTION IS LIVE!");
-		} catch(Exception e) {
-			errorOut(e.toString(), e);
-		} //END Try/Catch
-		return true;
-	} //END initEncryption()
-
-	private String toHexString(byte[] b) {
-		StringBuffer sBuff = new StringBuffer();
-		int length = b.length;
-		char[] hexChars = { '0', '1', '2', '3', '4', '5', '6', '7',
-				    '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
-		for(int i = 0; i < length; i++) {
-			int high = ((b[i] & 0xf0) >> 4); 
-			int low = (b[i] & 0x0f);
-			sBuff.append(hexChars[high]);
-			sBuff.append(hexChars[low]);
-		} //END For Bytes in B[] 
-		return sBuff.toString();
-	} //END toHexString(byte[])
-
-	public static String md5(char[] p) {
-		String md5 = null;
-		return md5;
-	} //END md5(char[])
-
-	public static String md5(String str) {
-		// http://viralpatel.net/blogs/java-md5-hashing-salting-password/
-		String md5 = null;
-		if(null == str) return null;
-		try {
-			MessageDigest dig = MessageDigest.getInstance("MD5");
-			dig.update(str.getBytes(), 0, str.length());
-			md5 = new BigInteger(1, dig.digest()).toString(16);
-		} catch(NoSuchAlgorithmException e) {
-			e.printStackTrace();
-		} //END Try/Catch
-		return md5;
-	} //END md5(String)
+	} //END login()
 
 	private void mainMenu() {
 		log("Main Menu...");
@@ -564,7 +534,7 @@ public class WEEUp {
 					case 'q': quit(); break;
 					case 'h': help(); break;
 					case 'm': send("[MAIN]"); break;
-					case 'r': send("[RESET]"); break;
+					case 'r': send("[RESET]"); resetPassword(); break;
 					case 't': send("[TRANSFER]"); break;
 					default:
 					} //END Switch Choice
@@ -590,7 +560,7 @@ public class WEEUp {
 			boolean badInput = true;
 			while(badInput) {
 				//...prompt user
-				System.out.print("Enter Your Choice (L/U/M/H/Q)\n: ");
+				System.out.print("Enter Your Choice (L/U/M/P/H/Q)\n: ");
 				//...get input
 				sLineBuffer = mConsole.readLine();
 				if(sLineBuffer == null || sLineBuffer.isEmpty()) {
@@ -607,23 +577,45 @@ public class WEEUp {
 					quit();
 				else if(choice == 'h')
 					help();
-				else if(choice == 'm' || choice == 'l' || choice == 'u') {
+				else if(choice == 'm' || choice == 'l' || choice == 'u' || choice == 'p') {
 					badInput = false;
 					switch(choice) {
 					case 'm':
 						send("[MAIN]");
 						break;
 					case 'l':
+						//Notify Server...
 						send("[LIST]");
+						//Receive File List
+						//FORMAT:
+						//Doc Root: ...
+						//File List:
+						//File 1
+						//...
+						//File n
+						//[LIST]
+						//[END]
+						receive();
+						if(!sStringBuffer.contains("[LIST]"))
+							throw new Exception("Invalid File List");
+						else {
+							String[] files = sStringBuffer.split("\n");
+							for(int i = 0; i <= files.length-2; i++)
+								System.out.println(files[i]);
+						} //END If/Else LIST
 						break;
 					case 'u':
 						send("[UPLOAD]");
 						upload();
 						break;
+					case 'p':
+						send("[PROFILE]");
+						break;
 					} //END Switch Choice
 				} else 
 					System.out.println("Sorry, invalid selection.\n"
-					+ "Please try: (M)ain Menu, (H)elp or (Q)uit");
+					+ "Please try: (L)ist Files, (U)pload File, "
+					+ "(M)ain Menu, (P)rofile, (H)elp or (Q)uit");
 				//END If/Else Choice
 			} //END While Bad Input
 		} catch(Exception e) {
@@ -631,17 +623,69 @@ public class WEEUp {
 		} //END Try/Catch
 	} //END transfer()
 
+//---------------------------
+//	Operational Functions
+	private void resetPassword() {
+		boolean failed = true;
+		while(failed) {
+			//...get the password hash twice
+			//TODO Use char array instead of string for password/hash
+			System.out.print("Enter New Password: ");
+			String pass = new String(mConsole.readPassword());
+			if(pass == null || pass.isEmpty()) {
+			        System.out.println("Please enter a valid password");
+			        continue;
+			} //END If Pass NULL
+			String hash = md5(pass + ":" + sUser);
+			log("Received Hash: " + hash);
+			System.out.print("Re-enter Password: ");
+			pass = new String(mConsole.readPassword());
+			if(pass == null || pass.isEmpty())
+			        errorOut("Received NULL Input",
+			                new Exception("Null User Input"));
+			String hash2 = md5(pass + ":" + sUser);
+			log("Received Hash: " + hash2);
+			//...make sure they match
+			if(!hash.equals(hash2)) {
+			        System.out.println("Invalid Input!\nPasswords do not match.");
+			        send("[FAILED]");
+			        failed = true;
+			        continue;
+			} //END If Hash1 NOT Hash2
+			//...notify server
+			send(hash2);
+			
+			//...check server response
+			receive();
+			log("Received Server Response:\n" + sStringBuffer);
+			if(sStringBuffer.contains("[SUCCESS]")) {
+			        System.out.println("Password Reset!\n"
+			        + "User: " + sUser + "\n"
+			        + "Pass: " + pass);
+			        failed = false;
+			} else {
+			        System.out.println("Error! Account Creation Failed.\nPlease try again");
+			        failed = true;
+			} //END If/Else SUCCESS
+		} //END while
+	} //END reset()
+
 	public void upload() {
 		log("Starting File Upload...");
 		try {
 			System.out.print("Enter the name of the file you wish to upload...\n: ");
-			String fName = mConsole.readLine();
-			if(fName == null || fName.isEmpty())
+			String fullName = mConsole.readLine();
+			String fName = "";
+			if(fullName == null || fullName.isEmpty())
 				throw new Exception("Null User Input");
-			File f = new File(fName);
+			File f = new File(fullName);
 			if(!f.isFile() || !f.canRead())
 				throw new Exception("Invalid File Selected");
-
+			else {
+				System.out.println("sFS: " + sFS + "\nfullName: " + fullName);
+				String[] tmpAry = fullName.split(sFS);
+				fName = tmpAry[(tmpAry.length - 1)];
+			} //END If/Else Full Name NULL/Empty
 			//Notify Server of File Name
 			//FORMAT:
 			//File Name...
@@ -673,6 +717,39 @@ public class WEEUp {
 
 //-------------------
 //	I/O Functions
+	private String toHexString(byte[] b) {
+		StringBuffer sBuff = new StringBuffer();
+		int length = b.length;
+		char[] hexChars = { '0', '1', '2', '3', '4', '5', '6', '7',
+				    '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
+		for(int i = 0; i < length; i++) {
+			int high = ((b[i] & 0xf0) >> 4); 
+			int low = (b[i] & 0x0f);
+			sBuff.append(hexChars[high]);
+			sBuff.append(hexChars[low]);
+		} //END For Bytes in B[] 
+		return sBuff.toString();
+	} //END toHexString(byte[])
+
+	public static String md5(char[] p) {
+		String md5 = null;
+		return md5;
+	} //END md5(char[])
+
+	public static String md5(String str) {
+		// http://viralpatel.net/blogs/java-md5-hashing-salting-password/
+		String md5 = null;
+		if(null == str) return null;
+		try {
+			MessageDigest dig = MessageDigest.getInstance("MD5");
+			dig.update(str.getBytes(), 0, str.length());
+			md5 = new BigInteger(1, dig.digest()).toString(16);
+		} catch(NoSuchAlgorithmException e) {
+			e.printStackTrace();
+		} //END Try/Catch
+		return md5;
+	} //END md5(String)
+
 	public String receive() {
 		log("Receiving Server Response...");
 		//Clear Buffers
