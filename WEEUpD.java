@@ -415,7 +415,7 @@ public class WEEUpD implements Runnable {
 			+ "User: " + sUser + "\n"
 			+ "Doc Root: " + sCWD + sFS + sUser + "\n"
 			+ "Cipher: " + sCipher + "\n"
-			+ "#Files: TODO\n"
+			+ "File Count: TODO\n"
 			+ "File Size: TODO\n"
 			+ "-----------------\n"
 			+ "\n"
@@ -730,8 +730,16 @@ public class WEEUpD implements Runnable {
 	private boolean checkUserProfile() {
 		log("Checking User Profile...");
 		try {
-			log("CWD: " + sCWD);
-			log("User Dir: " + sCWD + sFS + sUser);
+			File usrDir = new File(sCWD + sFS + sUser);
+			if(usrDir.isDirectory())
+				log("User Dir: " + usrDir);
+			else
+				if(usrDir.mkdir())
+					log("Created User Directory: " + usrDir);
+				else
+					throw new Exception("Unable to create user directory....");
+				//END If/Else Make Directory
+			//END If/Else Is Directory
 		} catch(Exception e) {
 			log("ERROR: " + e.toString());
 			return false;
@@ -751,6 +759,39 @@ public class WEEUpD implements Runnable {
 
 	private boolean upload() {
 		log("Uploading File...");
+		try {
+			//Receive File Notification:
+			//FORMAT:
+			//File Name...
+			//[FILE]
+			//[END]
+			receive();
+			if(!sStringBuffer.contains("[FILE]"))
+				throw new Exception("Invalid File Notification From Client");
+			String fName = sCWD + sFS + sUser + sFS + sStringBuffer.split("\n")[0];
+			log("Received File Name: " + fName);
+
+			//TODO Check for duplicate files
+
+			//Notify client...
+			send("[RECEIVED]");
+
+			//Receive the file
+			byte[] fBytes = receiveBytes();
+			fBytes = decrypt(fBytes);
+			FileOutputStream fOut = new FileOutputStream(fName);
+			fOut.write(fBytes);
+			File test = new File(fName);
+			if(test.isFile() && test.canRead())
+				send("[SUCCESS]");
+			else {
+				send("[FAILED]");
+				return false;
+			}
+		} catch(Exception e) {
+			log("ERROR: " + e.toString());
+			return false;
+		}
 		return true;
 	}
 
@@ -764,7 +805,7 @@ public class WEEUpD implements Runnable {
 				//And send the bytes...
 				if(sendBytes(b) == false) return false;
 				log("Successfully Sent Encrypted Message:\n" + s);
-				System.out.println("=========END SERVER RESPONSE=========\n");
+				System.out.println("========= END SERVER =========\n");
 				return true;
 			} //END If Encrypted
 			//Otherwise, proceed normally
@@ -815,6 +856,21 @@ public class WEEUpD implements Runnable {
 		return cipher;
 	} //END encrypt(String)
 
+	private byte[] encrypt(byte[] plain) {
+		//Check Input...
+		if(plain == null) return null;
+		byte[] cipher = null;
+		try {	//Encrypt Plain Bytes
+			cipher = mECipher.doFinal(plain);
+		} catch(Exception e) {
+			log("Error Encrypting Data: " + e.toString());
+			e.printStackTrace();
+			resetClient();
+			return null;
+		} //END Try/Catch
+		return cipher;
+	} //END encrypt(byte[])
+
 	private String toHexString(byte[] b) {
 		StringBuffer sBuff = new StringBuffer();
 		int length = b.length;
@@ -835,11 +891,13 @@ public class WEEUpD implements Runnable {
 		try {
 			//If a secure transmission
 			if(bEncrypt) {
-				sStringBuffer = decrypt(receiveBytes());
+				sStringBuffer = new String(decrypt(receiveBytes()));
 				if(sStringBuffer == null)
 					throw new Exception("Null Client Input");
+				else if(sStringBuffer.isEmpty())
+					throw new Exception("Empty Client Input");
 				else
-					log("Received: " + sStringBuffer);
+					log("Received:\n" + sStringBuffer);
 			} else //Otherwise, proceed normally...
 			//NOTE: Indentation Intentionally Removed
 			//As long as haven't gotten the end notification...
@@ -847,12 +905,12 @@ public class WEEUpD implements Runnable {
 				//...keep pulling data
 				sLineBuffer = mInputStream.readLine();
 				//If we received null input from socket...
-				if(sLineBuffer == null) {
+				if(sLineBuffer == null)
 					//...something went wrong
-					log("Received NULL from Client");
-					resetClient();
-					return null;
-				} else {
+					throw new Exception("NULL Client Input");
+				else if(sLineBuffer.isEmpty())
+					throw new Exception("Empty Client Input");
+				else {
 					//...otherwise we're good
 					log("Received: " + sLineBuffer);
 					if(!sLineBuffer.equals("[END]"))
@@ -861,6 +919,7 @@ public class WEEUpD implements Runnable {
 				} //END If/Else NULL
 			} //END While NOT END
 			//END If/Else Encrypted
+			System.out.println("========= END CLIENT =========\n");
 
 			//If we received the quit string
 			if(sStringBuffer.contains("[QUIT]")) {
@@ -897,13 +956,11 @@ public class WEEUpD implements Runnable {
 		return retVal;
 	} //END receiveBytes()
 
-	private String decrypt(byte[] cipher) {
-		if(cipher == null)
-			return null;
-		String plain = null;
+	private byte[] decrypt(byte[] cipher) {
+		if(cipher == null) return null;
+		byte[] plain = null;
 		try {
-			//Decrypt & Convert Cipher Bytes to Plain Text
-			plain = new String(mDCipher.doFinal(cipher));
+			plain = mDCipher.doFinal(cipher);
 		} catch(Exception e) {
 			log("Error During Decryption: " + e.toString());
 			e.printStackTrace();

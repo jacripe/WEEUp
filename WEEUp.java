@@ -618,6 +618,7 @@ public class WEEUp {
 						break;
 					case 'u':
 						send("[UPLOAD]");
+						upload();
 						break;
 					} //END Switch Choice
 				} else 
@@ -630,6 +631,46 @@ public class WEEUp {
 		} //END Try/Catch
 	} //END transfer()
 
+	public void upload() {
+		log("Starting File Upload...");
+		try {
+			System.out.print("Enter the name of the file you wish to upload...\n: ");
+			String fName = mConsole.readLine();
+			if(fName == null || fName.isEmpty())
+				throw new Exception("Null User Input");
+			File f = new File(fName);
+			if(!f.isFile() || !f.canRead())
+				throw new Exception("Invalid File Selected");
+
+			//Notify Server of File Name
+			//FORMAT:
+			//File Name...
+			//[FILE]
+			//[END]
+			send(fName + "\n[FILE]");
+
+			//Receive server confirmation...
+			receive();
+			if(!sStringBuffer.contains("[RECEIVED]"))
+				throw new Exception("Server Confirmation Failed");
+
+			//Pack file for transit...
+			byte[] fBytes = new byte[(int)f.length()];
+			FileInputStream fIn = new FileInputStream(f);
+			fIn.read(fBytes);
+			fBytes = encrypt(fBytes);
+			//Send it...
+			sendBytes(fBytes);
+
+			//Receive server confirmation...
+			receive();
+			if(!sStringBuffer.contains("[SUCCESS]"))
+				throw new Exception("File Transfer Error");
+		} catch(Exception e) {
+			errorOut(e);
+		} //END Try/Catch
+	} //END upload()
+
 //-------------------
 //	I/O Functions
 	public String receive() {
@@ -640,7 +681,7 @@ public class WEEUp {
 			//If this is a secure transmission...
 			if(bEncrypt) {
 				//Read Bytes & Decrypt
-				sStringBuffer = decrypt(receiveBytes());
+				sStringBuffer = new String(decrypt(receiveBytes()));
 				if(sStringBuffer == null || sStringBuffer.isEmpty())
 					throw new Exception("NULL Server Input");
 				sStringBuffer = sStringBuffer.trim();
@@ -684,12 +725,12 @@ public class WEEUp {
 		return retVal;
 	} //END receiveBytes()
 
-	private String decrypt(byte[] cipher) {
+	private byte[] decrypt(byte[] cipher) {
 		if(cipher == null) return null;
-		String plain = null;
+		byte[] plain = null;
 		try {
 			//Decrypt & Convert Cipher Bytes to Plain Text
-			plain = new String(mDCipher.doFinal(cipher));
+			plain = mDCipher.doFinal(cipher);
 		} catch(Exception e) {
 			errorOut(e.toString(), e);
 		} //END Try/Catch
@@ -748,6 +789,18 @@ public class WEEUp {
 		return cipher;
 	} //END encrypt(String)
 
+	private byte[] encrypt(byte[] plain) {
+		//Check Input...
+		if(plain == null) return null;
+		byte[] cipher = null;
+		try {	//Encrypt Bytes...
+			cipher = mECipher.doFinal(plain);
+		} catch(Exception e) {
+			errorOut(e);
+		} //END Try/Catch
+		return cipher;
+	} //END encrypt(byte[])
+
 	public static void log(String msg) {
 		if(nVerbosity > 0)
 			System.out.println((new Date()).toString() + " (CLIENT): " + msg);
@@ -776,4 +829,8 @@ public class WEEUp {
 	        e.printStackTrace();
 	        System.exit(-1);
 	} //END errorOut(String, Exception)
+
+	public static void errorOut(Exception e) {
+		errorOut(e.toString(), e);
+	}
 } //END WEEUp
