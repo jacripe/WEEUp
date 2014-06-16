@@ -558,7 +558,7 @@ public class WEEUpD implements Runnable {
 			} //END If User NULL
 			user = user.trim().toLowerCase();
 			sUser = user;
-			sDocRoot = sCWD + sFS + sUser;
+			sDocRoot = sCWD + sFS + "users" + sFS + sUser;
 			//...notify client
 			send("[RECEIVED]");
 			//...get password hash
