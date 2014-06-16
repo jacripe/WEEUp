@@ -20,22 +20,22 @@ import javax.crypto.interfaces.*;
  * 			CLASS DEFINITION
  * **************************************************************/
 
-public class WEEUpD implements Runnable {
+public class WEEUpD { //implements Runnable {
 //***************************************************************
 // 			DATA MEMBERS
-	private enum State { START, CREATE, LOGIN, MAIN, PROFILE, TRANSFER, UNKNOWN };
+//	private enum State { START, CREATE, LOGIN, MAIN, PROFILE, TRANSFER, UNKNOWN };
 
 	private int		nPort;
 	private int		nIP;
 	private String		sHostName;
-	private String		sLineBuffer;
+/*	private String		sLineBuffer;
 	private String		sStringBuffer;
 	private String		sVersion = "v0.4a";
-
+*/
 	private ServerSocket	mServerSocket;
 	private Socket		mClientSocket;
 
-	private OutputStream	mRawOutStream = null;
+/*	private OutputStream	mRawOutStream = null;
 	private InputStream	mRawInStream = null;
 
 	private BufferedReader	mInputStream;
@@ -71,7 +71,7 @@ public class WEEUpD implements Runnable {
 	private static final int	nPrimeCert = 0; //Certainty of Number Being Prime 
 
 	private static SecureRandom	mSecRan = new SecureRandom();
-
+*/
 //**************************************************************
 // 			MAIN				
 	public static void main(String[] args) {
@@ -152,12 +152,12 @@ public class WEEUpD implements Runnable {
 			mServerSocket = new ServerSocket(nPort);
 			log("Created Server Socket");
 			mClientSocket = null;
-			mInputStream = null;
+/*			mInputStream = null;
 			mOutputStream = null;
 			sStringBuffer = null;
 			log("Initialized Streams to NULL");
 			mState = State.START;
-			log("Initialized State to START");
+			log("Initialized State to START");*/
 		} catch(Exception e) {
 			errorOut("ERROR: " + e, e);
 		}
@@ -165,6 +165,93 @@ public class WEEUpD implements Runnable {
 
 //----------------
 //	Thread Run
+	public void listenSocket() {
+		log("Waiting on client connection...");
+		try {
+			mClientSocket = mServerSocket.accept();
+			log("Created New Client Socket");
+			Thread t = new Thread(new ServerSlave(mClientSocket, mServerSocket, "SessionID"));
+			t.start();
+		} catch(Exception e) {
+			errorOut("ERROR: " + e, e);
+		} //END Try/Catch
+	} //END listenSocket()
+	
+	public static void printUsage() {
+		String msg = "USAGE: java WEEUpD [port] [host]\n"
+			   + "\t[port] : Local Port to Listen On\n"
+			   + "\t[host] : Host name to use (NOT IMPLEMENTED)";
+		System.out.println(msg);
+	} //END printUsage()
+
+	public static void log(String s) {
+		//TODO unique server hostname/process identifier
+		System.out.println((new Date()).toString() + " (Server): " + s);
+	} //end log(String)
+
+	public static void errorOut(String msg, Exception e) {
+		log(msg);
+		e.printStackTrace();
+		System.exit(-1);
+	} //END errorOut(String, Exception)
+} //END WEEUpD
+
+class ServerSlave implements Runnable {
+	private enum State { START, CREATE, LOGIN, MAIN, PROFILE, TRANSFER, UNKNOWN };
+
+	private String		sLineBuffer;
+	private String		sStringBuffer;
+	private String		sVersion = "v0.4a";
+	private String		sID = "";
+
+	private ServerSocket	mServerSocket;
+	private Socket		mClientSocket;
+
+	private OutputStream	mRawOutStream = null;
+	private InputStream	mRawInStream = null;
+
+	private BufferedReader	mInputStream;
+	private PrintWriter	mOutputStream;
+
+	private DataInputStream		mDInStream;
+	private DataOutputStream	mDOutStream;
+
+	private File			fPasswd = new File("passwd");
+
+	private State			mState;
+
+	private static int		nCount = 0;
+	private static long		nSize = 0;
+	private static String		sUser = "";
+	private static String		sDocRoot = "";
+	private static final String	sCWD = System.getProperty("user.dir");
+	private static final String	sFS = System.getProperty("file.separator");
+
+	//Encryption Members
+	private static boolean		bEncrypt = false; //Whether or not Encryption is Available
+	private static String		sCipher;	//Cipher Algorithm to Use for Encryption
+	private static Cipher		mECipher;	//Cipher Object for Encryption
+	private static Cipher		mDCipher;	//Cipher Object for Decryption
+
+	private static DHPrivateKey	mDHKey;		//DH Private Key Object
+	private static DHPublicKey	mClientKey;	//Client Public Key Object
+	private static byte[]		aKeyBytes;	//Shared Secret Key Byte Array
+	private static SecretKey	mKey;		//Shared Secret Key Object
+
+	//TODO Make configurable
+	private static final int	nKeyLen = 1024; //Length of Key
+	private static final int	nPrimeCert = 0; //Certainty of Number Being Prime 
+
+	private static SecureRandom	mSecRan = new SecureRandom();
+
+	public ServerSlave(Socket client, ServerSocket server, String id) {
+		mClientSocket = client;
+		mServerSocket = server;
+		mState = State.START;
+		sID = id;
+		log("New Server Slave: " + sID);
+	}
+
 	public void run() {
 		log("Starting Run...");
 		try {
@@ -201,18 +288,6 @@ public class WEEUpD implements Runnable {
 			errorOut("ERROR: " + e, e);
 		} //END Try/Catch
 	} //END run()
-
-	public void listenSocket() {
-		log("Waiting on client connection...");
-		try {
-			mClientSocket = mServerSocket.accept();
-			log("Created New Client Socket");
-			Thread t = new Thread(this);
-			t.run();
-		} catch(Exception e) {
-			errorOut("ERROR: " + e, e);
-		} //END Try/Catch
-	} //END listenSocket()
 
 	//Adapted from Oracle documentation
 	//http://docs.oracle.com/javase/7/docs/technotes/guides/security/crypto/CryptoSpec.html#AppD
@@ -1092,19 +1167,12 @@ public class WEEUpD implements Runnable {
 		return false;
 	} //END resetClient()
 
-	public static void printUsage() {
-		String msg = "USAGE: java WEEUpD [port] [host]\n"
-			   + "\t[port] : Local Port to Listen On\n"
-			   + "\t[host] : Host name to use (NOT IMPLEMENTED)";
-		System.out.println(msg);
-	} //END printUsage()
+	public void log(String s) {
+		//TODO unique server hostname/process identifier
+		System.out.println((new Date()).toString() + " (SRV:" + sID + "): " + s);
+	} //end log(String)
 
-	public static void log(String s) {
-		//TODO Unique server hostname/process identifier
-		System.out.println((new Date()).toString() + " (SERVER): " + s);
-	} //END log(String)
-
-	public static void errorOut(String msg, Exception e) {
+	public void errorOut(String msg, Exception e) {
 		log(msg);
 		e.printStackTrace();
 		System.exit(-1);
