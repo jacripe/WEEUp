@@ -28,50 +28,9 @@ public class WEEUpD { //implements Runnable {
 	private int		nPort;
 	private int		nIP;
 	private String		sHostName;
-/*	private String		sLineBuffer;
-	private String		sStringBuffer;
-	private String		sVersion = "v0.4a";
-*/
 	private ServerSocket	mServerSocket;
 	private Socket		mClientSocket;
 
-/*	private OutputStream	mRawOutStream = null;
-	private InputStream	mRawInStream = null;
-
-	private BufferedReader	mInputStream;
-	private PrintWriter	mOutputStream;
-
-	private DataInputStream		mDInStream;
-	private DataOutputStream	mDOutStream;
-
-	private File			fPasswd = new File("passwd");
-
-	private State			mState;
-
-	private static int		nCount = 0;
-	private static long		nSize = 0;
-	private static String		sUser = "";
-	private static String		sDocRoot = "";
-	private static final String	sCWD = System.getProperty("user.dir");
-	private static final String	sFS = System.getProperty("file.separator");
-
-	//Encryption Members
-	private static boolean		bEncrypt = false; //Whether or not Encryption is Available
-	private static String		sCipher;	//Cipher Algorithm to Use for Encryption
-	private static Cipher		mECipher;	//Cipher Object for Encryption
-	private static Cipher		mDCipher;	//Cipher Object for Decryption
-
-	private static DHPrivateKey	mDHKey;		//DH Private Key Object
-	private static DHPublicKey	mClientKey;	//Client Public Key Object
-	private static byte[]		aKeyBytes;	//Shared Secret Key Byte Array
-	private static SecretKey	mKey;		//Shared Secret Key Object
-
-	//TODO Make configurable
-	private static final int	nKeyLen = 1024; //Length of Key
-	private static final int	nPrimeCert = 0; //Certainty of Number Being Prime 
-
-	private static SecureRandom	mSecRan = new SecureRandom();
-*/
 //**************************************************************
 // 			MAIN				
 	public static void main(String[] args) {
@@ -152,12 +111,6 @@ public class WEEUpD { //implements Runnable {
 			mServerSocket = new ServerSocket(nPort);
 			log("Created Server Socket");
 			mClientSocket = null;
-/*			mInputStream = null;
-			mOutputStream = null;
-			sStringBuffer = null;
-			log("Initialized Streams to NULL");
-			mState = State.START;
-			log("Initialized State to START");*/
 		} catch(Exception e) {
 			errorOut("ERROR: " + e, e);
 		}
@@ -199,19 +152,19 @@ public class WEEUpD { //implements Runnable {
 class ServerSlave implements Runnable {
 	private enum State { START, CREATE, LOGIN, MAIN, PROFILE, TRANSFER, UNKNOWN };
 
-	private String		sLineBuffer;
-	private String		sStringBuffer;
-	private String		sVersion = "v0.4a";
-	private String		sID = "";
+	private String			sLineBuffer;
+	private String			sStringBuffer;
+	private String			sVersion = "v0.4a";
+	private String			sID = "";
 
-	private ServerSocket	mServerSocket;
-	private Socket		mClientSocket;
+	private ServerSocket		mServerSocket;
+	private Socket			mClientSocket;
 
-	private OutputStream	mRawOutStream = null;
-	private InputStream	mRawInStream = null;
+	private OutputStream		mRawOutStream = null;
+	private InputStream		mRawInStream = null;
 
-	private BufferedReader	mInputStream;
-	private PrintWriter	mOutputStream;
+	private BufferedReader		mInputStream;
+	private PrintWriter		mOutputStream;
 
 	private DataInputStream		mDInStream;
 	private DataOutputStream	mDOutStream;
@@ -910,8 +863,8 @@ class ServerSlave implements Runnable {
 			//File n
 			//[LIST]
 			//[END]
-			String files = "Doc Root: " + sDocRoot + "\n"
-				     + "File List:\n";
+			String files = "FILES LIST:\n"
+				     + "===========";
 			File dir = new File(sDocRoot);
 			File[] list = dir.listFiles();
 			for(int i = 0; i < list.length; i++)
@@ -1219,4 +1172,4 @@ class ServerSlave implements Runnable {
 
 	private static final BigInteger	skip1024Modulus = new BigInteger(1, skip1024ModulusBytes);
 	private static final BigInteger	skip1024Base = BigInteger.valueOf(2);
-} //END WEEUpD
+} //END ServerSlave
