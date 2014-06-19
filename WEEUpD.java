@@ -149,13 +149,16 @@ public class WEEUpD { //implements Runnable {
 	} //END errorOut(String, Exception)
 } //END WEEUpD
 
+/* **************************************************************
+ * 			PRIVATE CLASS - ServerSlave
+ * **************************************************************/
 class ServerSlave implements Runnable {
 	private enum State { START, CREATE, LOGIN, MAIN, PROFILE, TRANSFER, UNKNOWN };
 
 	private String			sLineBuffer;
 	private String			sStringBuffer;
-	private String			sVersion = "v0.4a";
 	private String			sID = "";
+	private String			sVersion = "v0.5c";
 
 	private ServerSocket		mServerSocket;
 	private Socket			mClientSocket;
@@ -281,7 +284,9 @@ class ServerSlave implements Runnable {
 
 			//Get Client Confirmation
 			log("Waiting on Client Response");
-			receive();
+			sStringBuffer = receive();
+			if(sStringBuffer == null)
+				throw new Exception("Empty Confirmation");
 			if(!sStringBuffer.contains("[RECEIVED]"))
 				throw new Exception("Error Sending Public Key Bytes to Client");
 			log("Received Client Response:\n" + sStringBuffer);
@@ -320,10 +325,13 @@ class ServerSlave implements Runnable {
 			//Cipher Algorithm
 			//[SUCCESS]
 			//[END]
-			receive();
-			if(!sStringBuffer.contains("[SUCCESS]")
-			|| !sStringBuffer.contains("[CIPHER]"))
+			sStringBuffer = receive();
+			if(sStringBuffer == null)
+				throw new Exception("Empty Cipher Selection");
+			else if(!sStringBuffer.contains("[SUCCESS]")
+			     || !sStringBuffer.contains("[CIPHER]"))
 				throw new Exception("Key Agreement Error");
+			//END If/Else Cipher Selection
 			sCipher = sStringBuffer.split("\n")[1];
 			log("Received Client Cipher Selection: " + sCipher);
 
@@ -345,9 +353,12 @@ class ServerSlave implements Runnable {
 			send("[VERIFY_ENCRYPTION]");
 
 			log("Waiting on client response...");
-			receive();
-			if(!sStringBuffer.contains("[SUCCESS]"))
+			sStringBuffer = receive();
+			if(sStringBuffer == null)
+				throw new Exception("Empty Verification");
+			else if(!sStringBuffer.contains("[SUCCESS]"))
 				throw new Exception("Bad Client Encryption Verification Response");
+			//END If/Else Verification
 			send("[SUCCESS]");
 			log("SUCCESS! ENCRYPTION IS LIVE");
 		} catch(Exception e) {
@@ -431,11 +442,9 @@ class ServerSlave implements Runnable {
 			log("Main Menu");
 			s = "WEEUpD " + sVersion + "\n"
 			+ "-----------------\n"
-			+ "M) Main Menu\n"
-			+ "P) User Profile\n"
-			+ "T) File Transfer\n"
-			+ "Q) Quit\n"
-			+ "H) Help\n"
+			+ "(M)ain Menu\n"
+			+ "(P)rofile\t(T)ransfer\n"
+			+ "(Q)uit\t\t(H)elp\n"
 			+ "Please enter your choice (M/P/T/Q/H)\n"
 			+ "[MAIN]";
 			break;
@@ -444,17 +453,14 @@ class ServerSlave implements Runnable {
 			s = "User Profile\n"
 			+ "-----------------\n"
 			+ "User: " + sUser + "\n"
-			+ "Doc Root: " + sDocRoot + "\n"
-			+ "Cipher: " + sCipher + "\n"
-			+ "Count: " + nCount + "\n"
-			+ " Size: " + nSize + "\n"
+			+ "Root: " + sDocRoot + "\n"
+			+ "Cipher: " + sCipher + "\tK Len: " + nKeyLen + "\n"
+			+ "FCount: " + nCount  + "\tFSize: " + nSize + "\n"
 			+ "-----------------\n"
 			+ "\n"
-			+ "(R)eset Password\n"
-			+ "(T)ransfer Files\n"
-			+ "(M)ain Menu\n"
-			+ "(H)elp\n"
-			+ "(Q)uit\n"
+			+ "(R)eset Password\t(C)onfigure Settings\n"
+			+ "(T)ransfer Files\t(M)ain Menu\n"
+			+ "(H)elp\t\t\t(Q)uit\n"
 			+ "[PROFILE]";
 			break;
 		case TRANSFER:
@@ -466,12 +472,10 @@ class ServerSlave implements Runnable {
 			+ "Size: " + nSize + "\n"
 			+ "-----------------\n"
 			+ "\n"
-			+ "(L)ist Files\n"
-			+ "(U)pload File\n"
-			+ "(M)ain Menu\n"
-			+ "(P)rofile\n" 
-			+ "(H)elp\n"
-			+ "(Q)uit\n"
+			+ "(L)ist Files\t(R)emove File\n"
+			+ "(U)pload File\t(D)ownload File\n"
+			+ "(P)rofile\t(M)ain Menu\n"
+			+ "(H)elp\t\t(Q)uit\n"
 			+ "[TRANSFER]";
 			break;
 		default:
@@ -542,7 +546,7 @@ class ServerSlave implements Runnable {
 			String hash = receive();
 			//...check for null/failed
 			if(hash == null) {
-				log("Received NULL Hash");
+				log("Received Empty Hash");
 				resetClient();
 				return false;
 			} else if(hash.contains("[FAILED]")) {
@@ -580,7 +584,7 @@ class ServerSlave implements Runnable {
 			//...get user name
 			String user = receive();
 			if(user == null) {
-				log("Received NULL User");
+				log("Received Empty User");
 				resetClient();
 				return false;
 			} //END If User NULL
@@ -592,7 +596,7 @@ class ServerSlave implements Runnable {
 			//...get password hash
 			String hash = receive();
 			if(hash == null) {
-				log("Received NULL Hash");
+				log("Received Empty Hash");
 				resetClient();
 				return false;
 			} //END If Hash NULL
@@ -620,8 +624,7 @@ class ServerSlave implements Runnable {
 		log("Starting Main Menu...");
 		//Get User Input & Check for NULL
 		String input = receive();
-		if(input == null)
-			return false;
+		if(input == null) return false;
 		input = input.trim();
 		System.out.println("(CLIENT): " + input);
 		if(input.equals("[MAIN]")) {
@@ -641,8 +644,7 @@ class ServerSlave implements Runnable {
 		log("Starting User Profile...");
 		//Get User Input & Check For NULL
 		String input = receive();
-		if(input == null)
-			return false;
+		if(input == null) return false;
 		input = input.trim();
 		System.out.println("(CLIENT): " + input);
 		//Process It...
@@ -653,7 +655,7 @@ class ServerSlave implements Runnable {
 		else if(input.contains("[TRANSFER]"))
 			mState = State.TRANSFER;
 		else if(input.contains("[RESET]"))
-			resetPassword();
+			if(!resetPassword()) return false;
 		else
 			mState = State.UNKNOWN;
 		//END If/Else Input
@@ -664,26 +666,33 @@ class ServerSlave implements Runnable {
 		log("Starting File Transfer...");
 		//Get User Input & Check For NULL
 		String input = receive();
-		if(input == null)
-			return false;
+		if(input == null) return false;
 		input = input.trim();
 		System.out.println("(CLIENT): " + input);
 		//Process It...
+		boolean success = true;
 		if(input.contains("[MAIN]"))
 			mState = State.MAIN;
 		else if(input.contains("[PROFILE]"))
 			mState = State.PROFILE;
 		else if(input.contains("[LIST]"))
-			listFiles();
+			success = listFiles();
+		else if(input.contains("[REMOVE]"))
+			success = remove();
 		else if(input.contains("[UPLOAD]"))
-			upload();
+			success = upload();
+		else if(input.contains("[DOWNLOAD]"))
+			success = download();
 		else if(input.contains("[TRANSFER]"))
 			; //Do Nothing. You're there already
 		else
 			mState = State.UNKNOWN;
 		//END If/Else Input
-		return checkUserProfile();
-		//return true;
+		if(success)
+			return checkUserProfile();
+		else
+			return success;
+		//END If/Else Success
 	} //END transfer()
 
 //---------------------------
@@ -727,8 +736,6 @@ class ServerSlave implements Runnable {
 			return false;
 		} //END If User NULL OR Hash NULL
 
-		log("User: " + user);
-		log("Hash: " + hash);
 		try {
 			//Open Passwd File Reader...
 			BufferedReader passwdInput = new BufferedReader(new FileReader("passwd"));
@@ -795,7 +802,7 @@ class ServerSlave implements Runnable {
 			String hash = receive();
 			//...check for null/failed
 			if(hash == null) {
-			        log("Received NULL Hash");
+			        log("Received Empty Hash");
 			        resetClient();
 			        return false;
 			} else if(hash.contains("[FAILED]")) {
@@ -863,21 +870,32 @@ class ServerSlave implements Runnable {
 			//File n
 			//[LIST]
 			//[END]
-			String files = "FILES LIST:\n"
-				     + "===========";
+			String msg = "FILES LIST:\n"
+				   + "=====================\n";
 			File dir = new File(sDocRoot);
 			File[] list = dir.listFiles();
 			for(int i = 0; i < list.length; i++)
-				files += list[i].getName() + " : "
-					+ list[i].length() + "\n";
-			files += "[LIST]";
-			send(files);
+				msg += list[i].length() + " : "
+				     + dir.getAbsolutePath() + sFS + list[i].getName() + "\n";
+			msg += "[LIST]";
+			send(msg);
 		} catch(Exception e) {
 			log("ERROR: " + e.toString());
 			return false;
 		} //END Try/Catch
 		return true;
 	} //END listFiles()
+
+	private boolean remove() {
+		log("Removing File...");
+		try {
+			System.out.println("TODO");
+		} catch(Exception e) {
+			log("ERROR: " + e.toString());
+			return false;
+		} //END Try/Catch
+		return true;
+	} //END remove()
 
 	private boolean upload() {
 		log("Uploading File...");
@@ -887,9 +905,12 @@ class ServerSlave implements Runnable {
 			//File Name...
 			//[FILE]
 			//[END]
-			receive();
-			if(!sStringBuffer.contains("[FILE]"))
+			sStringBuffer = receive();
+			if(sStringBuffer == null)
+				throw new Exception("Empty File Selection");
+			else if(!sStringBuffer.contains("[FILE]"))
 				throw new Exception("Invalid File Notification From Client");
+			//END If/Else Selection
 			String fName = sDocRoot + sFS + sStringBuffer.split("\n")[0];
 			log("Received File Name: " + fName);
 
@@ -909,11 +930,66 @@ class ServerSlave implements Runnable {
 			else {
 				send("[FAILED]");
 				return false;
-			}
+			} //END If File Available
 		} catch(Exception e) {
 			log("ERROR: " + e.toString());
 			return false;
 		}
+		return true;
+	}
+
+	private boolean download() {
+		log("Starting download...");
+		try {
+			//Let the client know what we have...
+			String list = "";
+			File docRoot = new File(sDocRoot);
+			String[] files = docRoot.list();
+			for(int i = 0; i < files.length; i++)
+				list += files[i] + "\n";
+			send(list + "[LIST]");
+
+			//Get the file selection
+			//File name...
+			//[FILE]
+			//[END]
+			log("Waiting on File Selection...");
+			sStringBuffer = receive();
+			if(sStringBuffer == null)
+				throw new Exception("Empty Selection");
+			else if(!sStringBuffer.contains("[FILE]"))
+				throw new Exception("Invalid file selection");
+			//END If/Else Selection
+
+			//Parse file name
+			String fName = sDocRoot + sFS + sStringBuffer.split("\n")[0];
+			File file = new File(fName);
+			//Check it...
+			if(!file.isFile() || !file.canRead()) {
+				String msg = "File unavailable" + fName;
+				send(msg + "\n[UNAVAILABLE]");
+				throw new Exception();
+			} //END if File NOT Available
+			//Read it...
+			byte[] fBytes = new byte[(int)file.length()];
+			FileInputStream fIn = new FileInputStream(file);
+			fIn.read(fBytes);
+			//Encrypt it...
+			fBytes = encrypt(fBytes);
+			//Send it...
+			sendBytes(fBytes);
+			//Verify transaction...
+			sStringBuffer = receive();
+			if(sStringBuffer == null)
+				throw new Exception("Empty Buffer");
+			else if(!sStringBuffer.contains("[SUCCESS]"))
+				throw new Exception("Failed File Transfer");
+			//END If/Else Confirmation
+			log("File Transfer Complete");
+		} catch(Exception e) {
+			log("ERROR: " + e);
+			return false;
+		} //END Try/Catch
 		return true;
 	}
 
@@ -935,9 +1011,9 @@ class ServerSlave implements Runnable {
 			log("Sending String to Client:\n" + s + "|Fin.");
 			mOutputStream.println(s);
 		} catch(Exception e) {
-			log("Error while sending string to client");
-			e.printStackTrace();
-			resetClient();
+			log("Error while sending string to client\n" + e.toString());
+			//e.printStackTrace();
+			//resetClient();
 			return false;
 		} //END Try/Catch
 		log("Successfully Sent Message");
@@ -954,9 +1030,9 @@ class ServerSlave implements Runnable {
 			//Send the bytes
 			mRawOutStream.write(b);
 		} catch(Exception e) {
-			log("Error Sending Bytes to Client");
-			e.printStackTrace();
-			resetClient();
+			log("Error Sending Bytes to Client\n" + e.toString());
+			//e.printStackTrace();
+			//resetClient();
 			return false;
 		} //END Try/Catch
 		return true;
@@ -971,8 +1047,8 @@ class ServerSlave implements Runnable {
 			cipher = mECipher.doFinal(plain.getBytes());
 		} catch(Exception e) {
 			log("Error Performing Encryption: " + e.toString());
-			e.printStackTrace();
-			resetClient();
+			//e.printStackTrace();
+			//resetClient();
 			return null;
 		} //END Try/Catch
 		return cipher;
@@ -986,8 +1062,8 @@ class ServerSlave implements Runnable {
 			cipher = mECipher.doFinal(plain);
 		} catch(Exception e) {
 			log("Error Encrypting Data: " + e.toString());
-			e.printStackTrace();
-			resetClient();
+			//e.printStackTrace();
+			//resetClient();
 			return null;
 		} //END Try/Catch
 		return cipher;
@@ -1047,13 +1123,13 @@ class ServerSlave implements Runnable {
 			if(sStringBuffer.contains("[QUIT]")) {
 				//It would be a good idea to quit
 				log("Received Quit String");
-				resetClient();
+				//resetClient();
 				return null;
 			} //END If QUIT
 		} catch(Exception e) {
-			log("Error while receiving input from client");
-			e.printStackTrace();
-			resetClient();
+			log("Error while receiving input from client\n" + e.toString());
+			//e.printStackTrace();
+			//resetClient();
 			return null;
 		} //END Try/Catch
 		return sStringBuffer;
