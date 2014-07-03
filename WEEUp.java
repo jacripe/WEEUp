@@ -45,22 +45,21 @@ public class WEEUp {
 	private DataInputStream		mDInStream;
 	private DataOutputStream	mDOutStream;
 	
-	private Console		mConsole = System.console();
+	private Console			mConsole = System.console();
 
-	//Whether encryption has been initialized
-	private static boolean		bEncrypt = false;//Whether or not encryption is ready
-	private static String		sCipher = "DES";//Shared Cipher Algorithm
+	private static boolean		bEncrypt = false;	//Encrypted or Plain
+	private static int		nKeyLen = 1024;		//Key Length
+	private static String		sProtocol = "SKIP";	//SKIP or Generated
+	private static String		sCipher = "DES";	//Shared Cipher Algorithm
 
+	private static byte[]		aKeyBytes;	//Shared Secret Key Byte Array
 	private static DHPrivateKey	mDHPrivKey;	//Private Client DH Key Object
 	private static DHPublicKey	mServerPubKey;	//Public Server DH Key
-	private static byte[]		aKeyBytes;	//Shared Secret Key Byte Array
 	private static SecretKey	mKey;		//Shared Secret Key Object
 	private static Cipher		mECipher;	//Cipher Object for Ecnryption
 	private static Cipher		mDCipher;	//Cipher Object for Decryption
 
-	//TODO Make Configurable
-	private static final int	nKeyLen = 1024;	//Key Length
-	private static final int	nPrimeCert = 0;	//Certaining of Prime Number
+	private static final int	nPrimeCert = 0;	//Certainty of Prime Number
 
 	private static SecureRandom	mSecRan = new SecureRandom();
 
@@ -70,6 +69,8 @@ public class WEEUp {
 	public static void main(String[] args) {
 		log("WEEUp Client Started");
 		WEEUp w = parseArgs(args);
+		w.loadUserConf();
+		w.createSocket();
 		log("Starting Input Loop");
 		while(true) {
 			w.doShit();
@@ -85,21 +86,18 @@ public class WEEUp {
 		if(nV > 1) log("new WEEUp()");
 		nPort = 4321;
 		sHostName = "localhost";
-		this.createSocket();
 	} //END WEEUp()
 
 	WEEUp(int p) {
 		if(nV > 1) log("new WEEUp(" + p + ")");
 		nPort = p;
 		sHostName = "localhost";
-		this.createSocket();
 	} //END WEEUp(int)
 
 	WEEUp(int p, String h) {
 		if(nV > 1) log("new WEEUp(" + p + ", " + h + ")");
 		nPort = p;
 		sHostName = h;
-		this.createSocket();
 	} //END WEEUp(int, String)
 	
 //------------------
@@ -134,6 +132,53 @@ public class WEEUp {
 		//END If No Constructor Called
 		return retVal;
 	} //END parseArgs(String[])
+
+	public void loadUserConf() {
+		log("Loading User Configuration...");
+		try {
+			File f = new File(".wupconf");
+			//If the file does not exist...
+			if(!f.isFile() || !f.canRead()) {
+				//...make a new one
+				log("Writing new configuration file");
+				FileWriter fOut = new FileWriter(f);
+				fOut.write("alg=DES\n" +
+					   "len=1024\n" +
+					   "pro=SKIP\n");
+				fOut.flush();
+				fOut.close();
+				return;
+			} //END File NOT Avail
+
+			//Otherwise, read it
+			BufferedReader fIn = new BufferedReader(new FileReader(f));
+			String line = fIn.readLine();
+
+			//While we have a line...
+			while(line != null) {
+				//...parse it
+				//FORMAT:
+				//key=value
+				//...
+				String[] vals = line.split("=");
+				//...check it
+				if(vals[0].equals("alg"))
+					sCipher = vals[1];
+				else if(vals[0].equals("len"))
+					nKeyLen = (new Integer(vals[1])).intValue();
+				else if(vals[0].equals("pro"))
+					sProtocol = vals[1];
+				else if(vals[0].equals("pro"))
+					sProtocol = vals[1];
+				else
+					log("Unknown value in configuration file: " + line);
+				//...go to the next
+				line = fIn.readLine();
+			} //END While Line NOT NULL
+		} catch(Exception e) {
+			log("ERROR: " + e.toString());
+		} //END Try/Catch
+	} //END loadUserConf()
 
 	public void createSocket() {
 		log("Connecting to server...");
@@ -514,7 +559,7 @@ public class WEEUp {
 			boolean badInput = true;
 			while(badInput) {
 				//...prompt user
-				System.out.print("Enter Your Choice (R/T/M/H/Q)\n: ");
+				System.out.print("Enter Your Choice (R/C/T/M/H/Q)\n: ");
 				//...get input
 				sLineBuffer = mConsole.readLine();
 				if(sLineBuffer == null || sLineBuffer.isEmpty()) {
@@ -531,13 +576,15 @@ public class WEEUp {
 					quit();
 				else if(choice == 'h')
 					help();
-				else if(choice == 'm' || choice == 'r' || choice == 't') {
+				else if(choice == 'm' || choice == 'r' ||
+					choice == 'c' || choice == 't') {
 					badInput = false;
 					switch(choice) {
 					case 'q': quit(); break;
 					case 'h': help(); break;
 					case 'm': send("[MAIN]"); break;
 					case 'r': send("[RESET]"); resetPassword(); break;
+					case 'c': send("[CONF]"); configure(); break;
 					case 't': send("[TRANSFER]"); break;
 					default:
 					} //END Switch Choice
@@ -586,9 +633,7 @@ public class WEEUp {
 					choice == 'h' || choice == 'q') {
 					badInput = false;
 					switch(choice) {
-					case 'm':
-						send("[MAIN]");
-						break;
+					case 'm': send("[MAIN]"); break;
 					case 'l':
 						//Notify Server...
 						send("[LIST]");
@@ -613,21 +658,10 @@ public class WEEUp {
 								System.out.println(files[i]);
 						} //END If/Else LIST
 						break;
-					case 'r':
-						send("[REMOVE]");
-						remove();
-						break;
-					case 'u':
-						send("[UPLOAD]");
-						upload();
-						break;
-					case 'd':
-						send("[DOWNLOAD]");
-						download();
-						break;
-					case 'p':
-						send("[PROFILE]");
-						break;
+					case 'r': send("[REMOVE]"); remove(); break;
+					case 'u': send("[UPLOAD]"); upload(); break;
+					case 'd': send("[DOWNLOAD]"); download(); break;
+					case 'p': send("[PROFILE]"); break;
 					} //END Switch Choice
 				} else 
 					System.out.println("Sorry, invalid selection.\n"
@@ -685,7 +719,162 @@ public class WEEUp {
 			        failed = true;
 			} //END If/Else SUCCESS
 		} //END while
-	} //END reset()
+	} //END resetPassword()
+
+	public boolean configure() {
+		log("Configuring settings...");
+		try {
+			System.out.println("\tSettings\n" +
+					 "-----------------\n" + 
+					 "(C)ipher  : " + sCipher + "\n" +
+					 "(L)ength  : " + nKeyLen + "\n" +
+					 "(P)rotocol: " + sProtocol + "\n\n" +
+					 "What would you like to change?");
+			boolean badInput = true;
+			while(badInput) {
+				System.out.print(": ");
+				String input = mConsole.readLine();
+				if(input == null || input.isEmpty()) {
+					System.out.println("Please make a selection (C/L/P)");
+					badInput = true;
+					continue;
+				} //END If Input NULL
+				input = input.toLowerCase();
+				char c = input.charAt(0);
+				if(c != 'c' && c != 'l' && c != 'p') {
+					System.out.println("Invalid Choice\n" +
+							   "Please use a valid option (C/L/P)");
+					badInput = true;
+					continue;
+				} //END If Choice Invalid
+				badInput = false;
+				switch(c) {
+				case 'c': updateCipher(); break;
+				case 'l': updateLength(); break;
+				case 'p': updateProtocol(); break;
+				} //END Switch Choice
+			} //END While Bad Input
+			writeConf();
+		} catch(Exception e) {
+			log("ERROR: " + e.toString());
+			return false;
+		} //END Try/Catch
+		return true;
+	} //END configure()
+
+	public void updateCipher() {
+		boolean badInput = true;
+		while(badInput) {
+			System.out.print("Please choose new cipher:\n" +
+					 "1)  AES\n" +
+					 "2)  AESWrap\n" +
+					 "3)  ARCFOUR\n" +
+					 "4)  Blowfish\n" +
+					 "5)  DES\n" +
+					 "6)  DESede\n" +
+					 "7)  DESedeWrap\n" +
+					 "8)  PBEWithMD5AndDES\n" +
+					 "9)  PBEWithMD5AndTripleDES\n" +
+					 "10) PBEWithSHA1AndDESede\n" +
+					 "11) PBEWithSHA1AndRC2_40\n" +
+					 "12) RC2\n" +
+					 "13) RSA\n\n" +
+					 ": ");
+			String input = mConsole.readLine();
+			try {
+				int n = (new Integer(input)).intValue();
+				switch(n) {
+				case 1: sCipher = "AES"; break;
+				case 2: sCipher = "AESWrap"; break;
+				case 3: sCipher = "ARCFOUR"; break;
+				case 4: sCipher = "Blowfish"; break;
+				case 5: sCipher = "DES"; break;
+				case 6: sCipher = "DESede"; break;
+				case 7: sCipher = "DESedeWrap"; break;
+				case 8: sCipher = "PBEWithMD5AndDES"; break;
+				case 9: sCipher = "PBEWithMD5AndTripleDES"; break;
+				case 10: sCipher = "PBEWithSHA1AndDESede"; break;
+				case 11: sCipher = "PBEWithSHA1AndRC2_40"; break;
+				case 12: sCipher = "RC2"; break;
+				case 13: sCipher = "RSA"; break;
+				default: throw new Exception("Invalid Selection");
+				} //END Switch N
+				badInput = false;
+				log("New Cipher: " + sCipher);
+			} catch(Exception e) {
+				log("ERROR: " + e.toString());
+				System.out.println("Please make a numeric choice 1-13");
+				badInput = true;
+			} //END Try/Catch
+		} //END While Bad Input
+	} //END updateCipher()
+
+	public void updateLength() {
+		log("Updating key length...");
+		boolean badInput = true;
+		while(badInput) {
+			System.out.print("Select new key length\n" +
+					 "1) 256\n" +
+					 "2) 512\n" +
+					 "3) 1024\n" +
+					 "4) 2048\n\n" +
+					 ": ");
+			try {
+				String input = mConsole.readLine();
+				int n = (new Integer(input)).intValue();
+				switch(n) {
+				case 1: nKeyLen = 256; break;
+				case 2: nKeyLen = 512; break;
+				case 3: nKeyLen = 1024; break;
+				case 4: nKeyLen = 2048; break;
+				} //END Switch N
+				log("New key Length: " + nKeyLen);
+				badInput = false;
+			} catch(Exception e) {
+				System.out.println("Please make a numeric selection 1-4");
+			} //END Try/Catch
+		} //END While Bad Input
+	} //END updateLength()
+
+	public void updateProtocol() {
+		log("Updating protocol...");
+		boolean badInput = true;
+		while(badInput) {
+			System.out.print("Please select a key generation protocol...\n" +
+					 "1) SKIP\n" +
+					 "2) Generated\n\n" +
+					 ": ");
+			try {
+				String input = mConsole.readLine();
+				int n = (new Integer(input)).intValue();
+				switch(n) {
+				case 1: sProtocol = "SKIP"; break;
+				case 2: sProtocol = "Generated"; break;
+				default: throw new Exception("Invalid Selection");
+				} //END Switch N
+				badInput = false;
+			} catch(Exception e) {
+				badInput = true;
+				log("ERROR: " + e.toString());
+				System.out.println("Please make a numeric selection between 1 and 2");
+			} //END Try/Catch
+		} //END While Bad Input
+		log("New Protocol: " + sProtocol);
+	} //END updateProtocol()
+
+	public void writeConf() {
+		log("Saving configuration...");
+		try {
+			File f = new File(".wupconf");
+			FileWriter fOut = new FileWriter(f);
+			fOut.write("alg=" + sCipher + "\n" +
+				   "len="  + nKeyLen + "\n" +
+				   "pro=" + sProtocol);
+			fOut.flush();
+			fOut.close();
+		} catch(Exception e) {
+		} //END Try/Catch
+	} //END writeConf()
 
 	public boolean remove() {
 		if(nV > 1) log("Starting File Removal...");

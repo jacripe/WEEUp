@@ -452,10 +452,12 @@ class ServerSlave implements Runnable {
 			log("Profile Menu");
 			s = "User Profile\n"
 			+ "-----------------\n"
-			+ "User: " + sUser + "\n"
-			+ "Root: " + sDocRoot + "\n"
-			+ "Cipher: " + sCipher + "\tK Len: " + nKeyLen + "\n"
-			+ "FCount: " + nCount  + "\tFSize: " + nSize + "\n"
+			+ "User  : " + sUser + "\n"
+			+ "Root  : " + sDocRoot + "\n"
+			+ "Cipher: " + sCipher + "\n"
+			+ "KeyLen: " + nKeyLen + "\n"
+			+ "FCount: " + nCount  + "\n"
+			+ "FSize : " + nSize + "\n"
 			+ "-----------------\n"
 			+ "\n"
 			+ "(R)eset Password\t(C)onfigure Settings\n"
@@ -467,9 +469,9 @@ class ServerSlave implements Runnable {
 			log("Transfer Menu");
 			s = "\tFile Transfer\n"
 			+ "-----------------\n"
-			+ "DIR: " + sDocRoot + "\n"
+			+ "Root : " + sDocRoot + "\n"
 			+ "Count: " + nCount + "\n"
-			+ "Size: " + nSize + "\n"
+			+ "Size : " + nSize + "\n"
 			+ "-----------------\n"
 			+ "\n"
 			+ "(L)ist Files\t(R)emove File\n"
@@ -556,7 +558,7 @@ class ServerSlave implements Runnable {
 			} //END If/Else Hash NULL/FALIED
 			//...write user:hash to passwd file
 			try {
-				log("Writing " + user + ":" + hash + " to passwd...");
+				//log("Writing " + user + ":" + hash + " to passwd...");
 				FileWriter passwdOut = new FileWriter("passwd", true);
 				passwdOut.write(user + ":" + hash + "\n");
 				passwdOut.flush();
@@ -656,6 +658,8 @@ class ServerSlave implements Runnable {
 			mState = State.TRANSFER;
 		else if(input.contains("[RESET]"))
 			if(!resetPassword()) return false;
+		else if(input.contains("[CONF]"))
+			; //Do Nothing. Client side...
 		else
 			mState = State.UNKNOWN;
 		//END If/Else Input
