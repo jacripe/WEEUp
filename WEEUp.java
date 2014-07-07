@@ -766,37 +766,19 @@ public class WEEUp {
 		boolean badInput = true;
 		while(badInput) {
 			System.out.print("Please choose new cipher:\n" +
-					 "1)  AES\n" +
-					 "2)  AESWrap\n" +
-					 "3)  ARCFOUR\n" +
-					 "4)  Blowfish\n" +
-					 "5)  DES\n" +
-					 "6)  DESede\n" +
-					 "7)  DESedeWrap\n" +
-					 "8)  PBEWithMD5AndDES\n" +
-					 "9)  PBEWithMD5AndTripleDES\n" +
-					 "10) PBEWithSHA1AndDESede\n" +
-					 "11) PBEWithSHA1AndRC2_40\n" +
-					 "12) RC2\n" +
-					 "13) RSA\n\n" +
+					 "1) AES\n" +
+					 "2) Blowfish\n" +
+					 "3) DES\n" +
+					 "4) DESede\n" +
 					 ": ");
 			String input = mConsole.readLine();
 			try {
 				int n = (new Integer(input)).intValue();
 				switch(n) {
 				case 1: sCipher = "AES"; break;
-				case 2: sCipher = "AESWrap"; break;
-				case 3: sCipher = "ARCFOUR"; break;
-				case 4: sCipher = "Blowfish"; break;
-				case 5: sCipher = "DES"; break;
-				case 6: sCipher = "DESede"; break;
-				case 7: sCipher = "DESedeWrap"; break;
-				case 8: sCipher = "PBEWithMD5AndDES"; break;
-				case 9: sCipher = "PBEWithMD5AndTripleDES"; break;
-				case 10: sCipher = "PBEWithSHA1AndDESede"; break;
-				case 11: sCipher = "PBEWithSHA1AndRC2_40"; break;
-				case 12: sCipher = "RC2"; break;
-				case 13: sCipher = "RSA"; break;
+				case 2: sCipher = "Blowfish"; break;
+				case 3: sCipher = "DES"; break;
+				case 4: sCipher = "DESede"; break;
 				default: throw new Exception("Invalid Selection");
 				} //END Switch N
 				badInput = false;
