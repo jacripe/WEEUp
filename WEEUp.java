@@ -35,6 +35,9 @@ public class WEEUp {
 	private String		sCWD = System.getProperty("user.dir");
 	private String		sFS = System.getProperty("file.separator");
 
+	private boolean		bEmail = false;
+	private String		sAddr = "admin@wiseeyesent.com";
+
 	private Socket		mSocket;
 	private BufferedReader	mInputStream;
 	private PrintWriter	mOutputStream;
@@ -726,6 +729,8 @@ public class WEEUp {
 		try {
 			System.out.println("\tSettings\n" +
 					 "-----------------\n" + 
+					 "(E)-mails : " + bEmail + "\n" +
+					 "(A)ddress : " + sAddr + "\n" +
 					 "(C)ipher  : " + sCipher + "\n" +
 					 "(L)ength  : " + nKeyLen + "\n" +
 					 "(P)rotocol: " + sProtocol + "\n\n" +
@@ -735,20 +740,22 @@ public class WEEUp {
 				System.out.print(": ");
 				String input = mConsole.readLine();
 				if(input == null || input.isEmpty()) {
-					System.out.println("Please make a selection (C/L/P)");
+					System.out.println("Please make a selection (E/A/C/L/P)");
 					badInput = true;
 					continue;
 				} //END If Input NULL
 				input = input.toLowerCase();
 				char c = input.charAt(0);
-				if(c != 'c' && c != 'l' && c != 'p') {
+				if(c != 'e' && c != 'a' && c != 'c' && c != 'l' && c != 'p') {
 					System.out.println("Invalid Choice\n" +
-							   "Please use a valid option (C/L/P)");
+							   "Please use a valid option (E/A/C/L/P)");
 					badInput = true;
 					continue;
 				} //END If Choice Invalid
 				badInput = false;
 				switch(c) {
+				case 'e': updateEmails(); break;
+				case 'a': updateAddr(); break;
 				case 'c': updateCipher(); break;
 				case 'l': updateLength(); break;
 				case 'p': updateProtocol(); break;
@@ -761,6 +768,16 @@ public class WEEUp {
 		} //END Try/Catch
 		return true;
 	} //END configure()
+
+	public void updateEmails() {
+		//TODO
+		log("updateEmails() TODO");
+	}
+
+	public void updateAddr() {
+		//TODO
+		log("updateAddr() TODO");
+	}
 
 	public void updateCipher() {
 		boolean badInput = true;

@@ -12,6 +12,8 @@ import java.util.*;
 import java.security.*;
 import java.security.spec.*;
 
+//TODO Implement Emailing Logs to User
+//import javax.mail.*;
 import javax.crypto.*;
 import javax.crypto.spec.*;
 import javax.crypto.interfaces.*;
@@ -452,6 +454,8 @@ class ServerSlave implements Runnable {
 			log("Profile Menu");
 			s = "User Profile\n"
 			+ "-----------------\n"
+			+ "Email : OFF\n"
+			+ "Addr  : admin@wiseeyesent.com\n" 
 			+ "User  : " + sUser + "\n"
 			+ "Root  : " + sDocRoot + "\n"
 			+ "Cipher: " + sCipher + "\n"
@@ -879,7 +883,7 @@ class ServerSlave implements Runnable {
 			File dir = new File(sDocRoot);
 			File[] list = dir.listFiles();
 			for(int i = 0; i < list.length; i++)
-				msg += list[i].length() + " : "
+				msg += list[i].length() + "\t"
 				     + dir.getAbsolutePath() + sFS + list[i].getName() + "\n";
 			msg += "[LIST]";
 			send(msg);
