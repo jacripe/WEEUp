@@ -125,7 +125,8 @@ public class WEEUpD { //implements Runnable {
 		try {
 			mClientSocket = mServerSocket.accept();
 			log("Created New Client Socket");
-			Thread t = new Thread(new ServerSlave(mClientSocket, mServerSocket, "SessionID"));
+			long epoch = System.currentTimeMillis()/1000;
+			Thread t = new Thread(new ServerSlave(mClientSocket, mServerSocket, ""+epoch));
 			t.start();
 		} catch(Exception e) {
 			errorOut("ERROR: " + e, e);
